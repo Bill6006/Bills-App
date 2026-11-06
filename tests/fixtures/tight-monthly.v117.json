@@ -1,0 +1,26 @@
+{
+  "ui": { "theme": "aurora", "debtStrategy": "custom" },
+  "settings": {
+    "baseMonth": "2026-11", "baseBillsBalance": 0, "baseSavingsBalance": 900, "trueSavingsMonth": "2026-11",
+    "cushion": 50,
+    "pocket": { "minimumSurvival": 200, "thresholdMode": "net" },
+    "pay": { "frequency": "monthly", "paycheckCap": 1500, "anchorNextPayday": "2026-11-30", "semimonthlyDom1": 15, "semimonthlyDom2": 31, "monthlyDom": 0, "customDates": [] },
+    "pay2": { "frequency": "custom", "paycheckCap": 300, "anchorNextPayday": "2026-11-01", "semimonthlyDom1": 15, "semimonthlyDom2": 31, "monthlyDom": 15, "customDates": ["2026-11-18", "2026-12-18", "2027-01-15", "2027-02-19"] },
+    "otherIncomes": [ { "id": "oi1", "name": "Bonus", "amount": 500, "rule": { "type": "annual_md", "anchor": "2025-12-05" } } ],
+    "transferSplit": { "pay2BillsPct": 0, "pay2SavingsPct": 0, "otherBillsPct": 0, "otherSavingsPct": 0 },
+    "savings": { "monthlyGoal": 100, "timelineMonths": 6 }
+  },
+  "selectedMonth": "2026-11",
+  "bills": [
+    { "id": "b1", "name": "Rent", "amount": 1100, "rule": { "type": "monthly_dom", "dom": 1 } },
+    { "id": "b2", "name": "Phone", "amount": 60, "rule": { "type": "monthly_dom", "dom": 10 } },
+    { "id": "b3", "name": "Insurance", "amount": 210, "rule": { "type": "monthly_dom", "dom": 25 } },
+    { "id": "b4", "name": "Gym", "amount": 25, "rule": { "type": "weekly_dow", "dow": 0 } }
+  ],
+  "extras": [ { "id": "x1", "name": "Food", "amount": 150, "rule": { "type": "perpay" } } ],
+  "debts": [ { "id": "d1", "name": "Car", "balance": 4200, "originalBalance": 6000, "apr": 7.25, "minPayment": 210, "extraPayment": 0, "dueDay": 15, "priority": 1, "payments": [] } ],
+  "extraSpendEntries": [],
+  "extraSpendTransfers": [],
+  "events": [ { "id": "2027-01-e1", "event": "Emergency fund top", "item": "", "amount": 300, "rule": { "type": "monthly_dom", "dom": 15 } } ],
+  "extrasByMonth": {}
+}

@@ -1,0 +1,66 @@
+{
+  "ui": { "theme": "light", "debtStrategy": "snowball", "billsSortMode": "date", "billCustomOrder": ["b3","b1","b2"], "debtInterestVersion": 117 },
+  "settings": {
+    "baseMonth": "2026-09", "baseBillsBalance": 2400, "baseSavingsBalance": 5150.5, "trueSavingsMonth": "2026-08",
+    "cushion": 150,
+    "pocket": { "minimumSurvival": 400, "thresholdMode": "base" },
+    "pay": { "frequency": "semimonthly", "paycheckCap": 2210.4, "anchorNextPayday": "2026-01-15", "semimonthlyDom1": 13, "semimonthlyDom2": 29, "monthlyDom": 15, "customDates": [] },
+    "pay2": { "frequency": "weekly", "paycheckCap": 410, "anchorNextPayday": "2026-11-06", "semimonthlyDom1": 15, "semimonthlyDom2": 31, "monthlyDom": 15, "customDates": [] },
+    "otherIncomes": [
+      { "id": "oi1", "name": "Side gig", "amount": 250, "rule": { "type": "monthly_dom", "dom": 1 } },
+      { "id": "oi2", "name": "Tax refund", "amount": 1320.55, "rule": { "type": "one_time", "anchor": "2027-03-04" } }
+    ],
+    "transferSplit": { "pay2BillsPct": 30, "pay2SavingsPct": 20, "otherBillsPct": 10, "otherSavingsPct": 50 },
+    "savings": { "monthlyGoal": 650, "timelineMonths": 18 }
+  },
+  "selectedMonth": "2026-11",
+  "bills": [
+    { "id": "b1", "name": "Mortgage", "amount": 1875.33, "rule": { "type": "monthly_dom", "dom": 3 } },
+    { "id": "b2", "name": "Water", "amount": 48.12, "rule": { "type": "monthly_dom", "dom": 31 } },
+    { "id": "b3", "name": "Childcare", "amount": 215, "rule": { "type": "weekly_dow", "dow": 1 } },
+    { "id": "b4", "name": "Car registration", "amount": 162, "rule": { "type": "annual_md", "anchor": "2025-02-14" } },
+    { "id": "b5", "name": "Dentist", "amount": 340, "rule": { "type": "one_time", "anchor": "2026-12-09" } },
+    { "id": "b6", "name": "Lawn care", "amount": 65, "rule": { "type": "biweekly", "anchor": "2026-12-04" } },
+    { "id": "b7", "name": "Transit pass", "amount": 37.5, "rule": { "type": "perpay" } },
+    { "id": "b8", "name": "Streaming", "amount": 22.99, "rule": { "type": "monthly_dom", "dom": 17 } }
+  ],
+  "extras": [
+    { "id": "x1", "name": "Groceries", "amount": 180, "rule": { "type": "perpay" } },
+    { "id": "x2", "name": "Fuel", "amount": 55, "rule": { "type": "weekly_dow", "dow": 5 } },
+    { "id": "x3", "name": "Haircut", "amount": 35, "rule": { "type": "monthly_dom", "dom": 20 } },
+    { "id": "x4", "name": "Pet care", "amount": 40, "rule": { "type": "biweekly", "anchor": "2027-01-08" } },
+    { "id": "x5", "name": "Concert", "amount": 120, "rule": { "type": "one_time", "anchor": "2026-11-21" } }
+  ],
+  "debts": [
+    { "id": "d1", "name": "Student loan", "balance": 8650.2, "originalBalance": 14000, "apr": 5.5, "minPayment": 160, "extraPayment": 40, "dueDay": 31, "priority": 2, "interestStartDate": "2026-06-01", "collapsed": false,
+      "payments": [
+        { "id": "p1", "date": "2026-07-31", "amount": 200, "principal": 159.6, "interest": 40.4, "balanceBefore": 9050.2, "balanceAfter": 8890.6, "note": "", "createdAt": "2026-07-31T15:00:00Z" },
+        { "id": "p2", "date": "2026-08-31", "amount": 200, "principal": 158.47, "interest": 41.53, "balanceBefore": 8890.6, "balanceAfter": 8732.13, "note": "", "createdAt": "2026-08-31T15:00:00Z" },
+        { "id": "p3", "date": "2026-09-30", "amount": 120, "principal": 81.93, "interest": 38.07, "balanceBefore": 8732.13, "balanceAfter": 8650.2, "note": "", "createdAt": "2026-09-30T15:00:00Z" }
+      ] },
+    { "id": "d2", "name": "Store card", "balance": 640, "originalBalance": 900, "apr": 29.99, "minPayment": 35, "extraPayment": 0, "dueDay": 8, "priority": 1, "collapsed": true, "payments": [] },
+    { "id": "d3", "name": "Furniture", "balance": 0, "originalBalance": 1200, "apr": 0, "minPayment": 100, "extraPayment": 0, "dueDay": 12, "priority": 3, "collapsed": false, "payments": [] }
+  ],
+  "extraSpendEntries": [
+    { "id": "s1", "extraId": "x1", "extraName": "Groceries", "amount": 96.4, "entryType": "spend", "date": "2026-10-14", "note": "Market", "createdAt": "2026-10-14T20:00:00Z" },
+    { "id": "s2", "extraId": "x1", "extraName": "Groceries", "amount": 61.15, "entryType": "spend", "date": "2026-10-27", "note": "", "createdAt": "2026-10-27T20:00:00Z" },
+    { "id": "s3", "extraId": "x2", "extraName": "Fuel", "amount": 48, "entryType": "spend", "date": "2026-10-30", "note": "", "createdAt": "2026-10-30T20:00:00Z" },
+    { "id": "s4", "extraId": "__misc__", "extraName": "Misc", "amount": 23.75, "entryType": "spend", "date": "2026-11-02", "note": "Gift wrap", "createdAt": "2026-11-02T20:00:00Z" },
+    { "id": "s5", "extraId": "x1", "extraName": "Groceries", "amount": -12.3, "entryType": "refund", "date": "2026-11-03", "note": "Return", "createdAt": "2026-11-03T20:00:00Z" },
+    { "id": "s6", "extraId": "x9", "extraName": "Old hobby", "amount": 30, "entryType": "spend", "date": "2026-09-20", "note": "deleted budget", "createdAt": "2026-09-20T20:00:00Z" },
+    { "id": "s7", "extraId": "x3", "extraName": "Haircut", "amount": 35, "entryType": "spend", "date": "2026-09-19", "note": "", "createdAt": "2026-09-19T20:00:00Z" },
+    { "id": "s8", "extraId": "x1", "extraName": "Groceries", "amount": 140.02, "entryType": "spend", "date": "2026-09-05", "note": "", "createdAt": "2026-09-05T20:00:00Z" },
+    { "id": "s9", "extraId": "x2", "extraName": "Fuel", "amount": 52.5, "entryType": "spend", "date": "2026-11-05", "note": "", "createdAt": "2026-11-05T20:00:00Z" }
+  ],
+  "extraSpendTransfers": [
+    { "id": "t1", "fromExtraId": "x3", "fromExtraName": "Haircut", "toExtraId": "x1", "toExtraName": "Groceries", "amount": 20, "date": "2026-10-13", "note": "", "createdAt": "2026-10-13T20:00:00Z" },
+    { "id": "t2", "fromExtraId": "x2", "fromExtraName": "Fuel", "toExtraId": "x2", "toExtraName": "Fuel", "amount": 5, "date": "2026-10-13", "note": "", "createdAt": "2026-10-13T20:00:00Z" }
+  ],
+  "events": [
+    { "id": "2026-12-e1", "event": "Holidays", "item": "Gifts", "amount": 700, "rule": { "type": "one_time", "anchor": "2026-12-12" } },
+    { "id": "2026-12-e2", "event": "Holidays", "item": "Travel", "amount": 450, "rule": { "type": "one_time", "anchor": "2026-12-20" } },
+    { "id": "2027-05-e3", "event": "Vacation", "item": "", "amount": 1600, "rule": { "type": "one_time", "anchor": "2027-05-28" } },
+    { "id": "2026-08-e4", "event": "Insurance", "item": "Deductible", "amount": 250, "rule": { "type": "one_time", "anchor": "2026-08-22" } }
+  ],
+  "extrasByMonth": {}
+}

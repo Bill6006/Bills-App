@@ -1,0 +1,42 @@
+{
+  "ui": { "theme": "dark", "activeTab": "ledger", "ledgerView": "table", "dashboardMode": "details", "showSidePocket": true },
+  "settings": {
+    "baseMonth": "2026-11", "baseBillsBalance": 900, "baseSavingsBalance": 3200, "trueSavingsMonth": "2026-11",
+    "cushion": 100,
+    "pocket": { "minimumSurvival": 300, "thresholdMode": "net" },
+    "pay": { "frequency": "biweekly", "paycheckCap": 1850, "anchorNextPayday": "2026-11-13", "semimonthlyDom1": 15, "semimonthlyDom2": 31, "monthlyDom": 15, "customDates": [] },
+    "pay2": null, "otherIncomes": [],
+    "savings": { "monthlyGoal": 400, "timelineMonths": 12 }
+  },
+  "selectedMonth": "2026-11",
+  "bills": [
+    { "id": "b1", "name": "Rent", "amount": 1450, "rule": { "type": "monthly_dom", "dom": 1 } },
+    { "id": "b2", "name": "Car insurance", "amount": 165, "rule": { "type": "monthly_dom", "dom": 5 } },
+    { "id": "b3", "name": "Spotify", "amount": 11.99, "rule": { "type": "monthly_dom", "dom": 9 } },
+    { "id": "b4", "name": "Phone", "amount": 85, "rule": { "type": "monthly_dom", "dom": 12 } },
+    { "id": "b5", "name": "Gym", "amount": 35, "rule": { "type": "monthly_dom", "dom": 15 } },
+    { "id": "b6", "name": "Internet", "amount": 70, "rule": { "type": "monthly_dom", "dom": 18 } },
+    { "id": "b7", "name": "Electric", "amount": 120, "rule": { "type": "monthly_dom", "dom": 22 } },
+    { "id": "b8", "name": "Netflix", "amount": 15.49, "rule": { "type": "monthly_dom", "dom": 27 } }
+  ],
+  "extras": [
+    { "id": "x1", "name": "Groceries", "amount": 200, "rule": { "type": "perpay" } },
+    { "id": "x2", "name": "Gas", "amount": 60, "rule": { "type": "perpay" } },
+    { "id": "x3", "name": "Eating out", "amount": 80, "rule": { "type": "perpay" } }
+  ],
+  "debts": [
+    { "id": "d1", "name": "Car loan", "balance": 12400, "originalBalance": 18000, "apr": 6.9, "minPayment": 325, "extraPayment": 0, "dueDay": 20, "priority": 2, "payments": [] },
+    { "id": "d2", "name": "Credit card", "balance": 2300, "originalBalance": 3100, "apr": 24.99, "minPayment": 75, "extraPayment": 50, "dueDay": 25, "priority": 1, "payments": [] }
+  ],
+  "extraSpendEntries": [
+    { "id": "xs1", "extraId": "x1", "extraName": "Groceries", "amount": 64.2, "entryType": "spend", "date": "2026-11-02", "note": "Aldi", "createdAt": "2026-11-02T18:00:00Z" },
+    { "id": "xs2", "extraId": "x2", "extraName": "Gas", "amount": 41, "entryType": "spend", "date": "2026-11-03", "note": "", "createdAt": "2026-11-03T18:00:00Z" },
+    { "id": "xs3", "extraId": "x3", "extraName": "Eating out", "amount": 23.5, "entryType": "spend", "date": "2026-11-05", "note": "Tacos", "createdAt": "2026-11-05T18:00:00Z" }
+  ],
+  "extraSpendTransfers": [],
+  "events": [
+    { "id": "e1", "name": "Holiday gifts", "amount": 600, "rule": { "type": "one_time", "anchor": "2026-12-15" } },
+    { "id": "e2", "name": "Car registration", "amount": 180, "rule": { "type": "one_time", "anchor": "2027-02-10" } }
+  ],
+  "extrasByMonth": {}
+}
