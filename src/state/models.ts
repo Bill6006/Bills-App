@@ -6,7 +6,7 @@ import {
   parseISOToMs, parseMonthKey, toDateObj, type IsoDate, type MonthKey,
 } from '../engine/dates';
 import { fmtMoney, round2 } from '../engine/money';
-import { debtSummary, lastPaymentDate, missedDueDates, payoffMonth, payoffSchedule, type DebtSummary } from '../engine/loans';
+import { debtSummary, lastPaymentDate, loanOutlook, missedDueDates, payoffMonth, payoffSchedule, type DebtSummary } from '../engine/loans';
 import type { MonthPlan, PlanEngine, PlanRow } from '../engine/plan';
 import { capForPayIndex, pocketBase, pocketMinimumInfo, savingsForPayIndex, type MinimumInfo } from '../engine/pocket';
 import { nextPeriod, periodForDate, snapshotForRange, type Period, type Snapshot } from '../engine/spending';
@@ -207,7 +207,13 @@ export function homeModel(engine: PlanEngine): HomeModel {
   }
 
   const plan = engine.plan(today.slice(0, 7));
-  const loans = debtSummary(engine.data.debts, today);
+  // Months and interest left come from the payment schedule, the same figures the Loans screens show.
+  const outlooks = engine.data.debts.filter((d) => d.balance > 0).map((d) => loanOutlook(d, today));
+  const loans = {
+    ...debtSummary(engine.data.debts, today),
+    longestMonths: outlooks.reduce((mx, o) => Math.max(mx, Number.isFinite(o.monthsLeft) ? o.monthsLeft : Infinity), 0),
+    interestLeft: round2(outlooks.reduce((t, o) => t + (Number.isFinite(o.interestLeft) ? o.interestLeft : 0), 0)),
+  };
   let nextPayoff: HomeModel['loans']['nextPayoff'] = null;
   for (const d of engine.data.debts) {
     const m = payoffMonth(d, today);

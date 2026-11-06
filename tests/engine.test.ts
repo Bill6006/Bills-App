@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { applyMissedPayments, catchUpAutoPay, debtBillsForMonth, deletePayment, editPayment, logPayment, missedDueDates, payoffCalc, payoffSchedule, previewPayment, setBalance } from '../src/engine/loans';
+import { applyMissedPayments, catchUpAutoPay, debtBillsForMonth, deletePayment, editPayment, logPayment, missedDueDates, nextUnpaidDue, payoffCalc, payoffSchedule, previewPayment, setBalance } from '../src/engine/loans';
 import { PlanEngine } from '../src/engine/plan';
 import { describeRule } from '../src/engine/schedule';
 import { ALL_FIXES, NO_FIXES, type Debt } from '../src/engine/types';
@@ -18,6 +18,8 @@ const card: Debt = {
 };
 
 describe('loans', () => {
+  // payoffCalc (v117) projects from the last payment date; the schedule never starts in the past, so the two
+  // agree whenever the loan is up to date (no due dates between the last payment and today).
   it('payoffSchedule agrees with v117 payoffCalc', () => {
     for (const d of [card, { ...card, interestStartDate: '2026-10-26' as const }, { ...card, apr: 0 }]) {
       const calc = payoffCalc(d, '2026-11-06');
@@ -85,14 +87,63 @@ describe('loan payments', () => {
     expect(s.payments[0].interest).toBe(round2(20000 * 0.06 / 365 * 86));
   });
 
-  it('finds due dates nothing covers and can record them as paid', () => {
-    expect(missedDueDates(stale, today)).toEqual(['2026-09-25', '2026-10-25']);
+  it('finds due dates nothing covers and can record exactly those as paid', () => {
+    // The Aug 31 payment falls in the cycle ending Sep 25, so only Oct 25 is missing.
+    expect(missedDueDates(stale, today)).toEqual(['2026-10-25']);
     const { debt, applied } = applyMissedPayments(stale, today, 'now');
-    expect(applied.map((p) => p.date)).toEqual(['2026-09-25', '2026-10-25']);
-    expect(applied[0].interest).toBe(round2(20000 * 0.06 / 365 * 25));
-    expect(debt.balance).toBe(applied[1].balanceAfter);
+    expect(applied.map((p) => p.date)).toEqual(['2026-10-25']);
+    expect(applied[0].interest).toBe(round2(20000 * 0.06 / 365 * 55));
+    expect(debt.balance).toBe(applied[0].balanceAfter);
     expect(missedDueDates(debt, today)).toEqual([]);
     expect(payoffSchedule(debt, today).payments[0].dueIso).toBe('2026-11-25');
+  });
+
+  it('a payment made just before its due date counts for that date', () => {
+    const early: Debt = { ...stale, payments: [{ ...stale.payments[0], date: '2026-10-24' }] };
+    expect(missedDueDates(early, today)).toEqual([]);
+  });
+
+  it('confirming the balance clears the missed-payment check', () => {
+    expect(missedDueDates({ ...stale, balanceAsOf: today }, today)).toEqual([]);
+  });
+
+  it('moving an automatic payment to the day you really paid keeps it tied to its due date', () => {
+    const paid = catchUpAutoPay({ ...card, autoPaidThrough: '2026-10-20' }, today, 'now').debt;
+    const auto = paid.payments.find((p) => p.auto)!;
+    const moved = editPayment(paid, auto.id, { amount: auto.amount, date: '2026-10-27', note: '' }, today);
+    const p = moved.payments.find((x) => x.id === auto.id)!;
+    expect(p.auto).toBeUndefined();
+    expect(p.replacesDue).toBe('2026-10-25');
+    expect(debtBillsForMonth('2026-10', [moved], today, ALL_FIXES)[0].amount).toBe(p.amount);
+    expect(missedDueDates(moved, today)).toEqual([]);
+  });
+
+  it('an extra payment never finishes a cycle; a typed balance does', () => {
+    const due = { ...card, dueDay: 6, autoPay: false };
+    const extra = logPayment(due, { amount: 50, date: today, note: '' }, today, 'now');
+    expect(extra.payments[0].extra).toBe(true);
+    expect(nextUnpaidDue(extra, today)).toBe('2026-11-06');
+    expect(nextUnpaidDue({ ...due, balanceAsOf: today }, today)).toBe('2026-12-06');
+  });
+
+  it('turning automatic payments on covers a payment due today, but not past a typed balance', () => {
+    const due: Debt = { ...card, dueDay: 6, autoPaidThrough: '2026-11-05' };
+    expect(catchUpAutoPay(due, today, 'now').applied.map((p) => p.date)).toEqual(['2026-11-06']);
+    expect(catchUpAutoPay({ ...due, balanceAsOf: today }, today, 'now').applied).toHaveLength(0);
+  });
+
+  it('a long gap makes the first payment all interest, never a negative principal', () => {
+    const gap: Debt = { ...stale, minPayment: 250, payments: [{ ...stale.payments[0], date: '2026-08-01' }] };
+    const first = payoffSchedule(gap, today).payments[0];
+    expect(first.principal).toBe(0);
+    expect(first.interest).toBe(250);
+    expect(first.balanceAfter).toBe(20000);
+  });
+
+  it('keeps a missing starting balance from turning into NaN', () => {
+    const noOrig = { ...card, autoPaidThrough: '2026-10-20' } as Debt;
+    delete (noOrig as Partial<Debt>).originalBalance;
+    expect(Number.isFinite(catchUpAutoPay(noOrig, today, 'now').debt.originalBalance)).toBe(true);
   });
 
   it('typing the balance confirms it, keeps it through later payments, and clears the missed-payment check', () => {

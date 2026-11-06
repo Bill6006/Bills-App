@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { fmtDow, fmtMedium, fmtMonthLong, fmtShort, isValidIso, parseISOToMs, type IsoDate } from '../../../engine/dates';
+import { DAY_MS, fmtDow, fmtMedium, fmtMonthLong, fmtShort, isoDate, isValidIso, parseISOToMs, type IsoDate } from '../../../engine/dates';
 import { clampInt, fmtMoney, round2 } from '../../../engine/money';
 import {
   applyMissedPayments, dailyInterestDays, deletePayment, editPayment, interestPaidSoFar, lastPaymentDate, loanOutlook, logPayment,
@@ -9,7 +9,7 @@ import {
 import type { Debt, DebtPayment, DebtStrategy } from '../../../engine/types';
 import { navigate } from '../../../app/router';
 import { openSheet } from '../../../state/sheets';
-import { update, useActive, useStore } from '../../../state/store';
+import { runDailyChores, update, useActive, useStore } from '../../../state/store';
 import { toast } from '../../../state/toast';
 import { Sheet } from '../../components/Sheet';
 import { Amount, Chip, Meter, Money, Note } from '../../components/bits';
@@ -24,6 +24,8 @@ const STRATEGIES: Array<{ value: DebtStrategy; label: string }> = [
 ];
 
 const payoffText = (o: LoanOutlook) => (o.payoffMk === null ? 'Payment too low to pay it off' : o.payoffMk ? `Paid off ${fmtMonthLong(o.payoffMk)}` : 'Paid off');
+
+const dayBefore = (iso: IsoDate) => isoDate(parseISOToMs(iso) - DAY_MS);
 
 function setDebt(id: string, fn: (d: Debt) => Debt, opts: { undo?: string } = {}) {
   update((data) => { data.debts = data.debts.map((x) => (x.id === id ? fn(x) : x)); }, opts);
@@ -43,6 +45,7 @@ function LoansList({ openNew }: { openNew: boolean }) {
   const active = orderDebts(data.debts.filter((d) => d.balance > 0), strategy);
   const done = data.debts.filter((d) => d.balance <= 0);
   const outlooks = useMemo(() => new Map(data.debts.map((d) => [d.id, loanOutlook(d, today)])), [data.debts, today]);
+  const missedIds = useMemo(() => new Set(data.debts.filter((d) => missedDueDates(d, today).length > 0).map((d) => d.id)), [data.debts, today]);
   const owed = round2(active.reduce((t, d) => t + d.balance, 0));
   const monthly = round2(active.reduce((t, d) => t + scheduledAmount(d), 0));
   const interestLeft = round2(active.reduce((t, d) => t + (Number.isFinite(outlooks.get(d.id)!.interestLeft) ? outlooks.get(d.id)!.interestLeft : 0), 0));
@@ -91,7 +94,7 @@ function LoansList({ openNew }: { openNew: boolean }) {
           <ReorderList items={active} idOf={(d) => d.id} enabled={strategy === 'custom' && active.length > 1} label="Loans" onMove={reorder}
             row={(d, handle) => {
               const o = outlooks.get(d.id)!;
-              const missed = missedDueDates(d, today).length > 0;
+              const missed = missedIds.has(d.id);
               return (
                 <div className={`row ${handle ? 'with-handle' : 'no-lead'}`}>
                   {handle}
@@ -192,7 +195,11 @@ function LoanDetail({ id }: { id: string }) {
           )}
           <div className="field-row">
             <div className="grow"><div className="t">Apply it automatically</div><div className="sub">{d.autoPay ? `On each due date the app assumes you paid ${fmtMoney(scheduledAmount(d))} and lowers the balance.` : "You'll log each payment yourself."}</div></div>
-            <Switch checked={d.autoPay} label="Apply payments automatically" onChange={(v) => setDebt(d.id, (x) => ({ ...x, autoPay: v, autoPaidThrough: today }))} />
+            <Switch checked={d.autoPay} label="Apply payments automatically" onChange={(v) => {
+              // Turning it on covers a payment due today too.
+              setDebt(d.id, (x) => ({ ...x, autoPay: v, autoPaidThrough: v ? dayBefore(today) : today }));
+              if (v) runDailyChores();
+            }} />
           </div>
           <div className="btn-row">
             <button type="button" className="btn" onClick={() => openLogPayment(d.id)}><IconPlus />Log a payment</button>
@@ -283,11 +290,15 @@ function LoanEditor({ debt, focusBalance, onClose }: { debt?: Debt; focusBalance
       dueDay: clampInt(dueDay, 1, 31), interestStartDate: daily ? from : '', autoPay,
     };
     if (debt) {
+      const turnedOn = autoPay && !debt.autoPay;
       setDebt(debt.id, (x) => {
-        let next: Debt = { ...x, ...fields, autoPaidThrough: autoPay && !x.autoPay ? today : x.autoPaidThrough };
+        let next: Debt = { ...x, ...fields, autoPaidThrough: turnedOn ? dayBefore(today) : x.autoPaidThrough };
+        // Saving from "Enter balance" confirms it even when it already matched.
         if (Math.abs(round2(balance) - x.balance) > 0.004) next = setBalance(next, balance, today);
+        else if (focusBalance) next = { ...next, balanceAsOf: today };
         return next;
       }, { undo: 'Loan saved' });
+      if (turnedOn) runDailyChores();
     } else {
       const b = round2(balance);
       const d: Debt = {
@@ -420,7 +431,7 @@ function EditPaymentSheet({ debtId, paymentId, onClose }: { debtId: string; paym
       {p.auto && <Note tone="info">Applied automatically on its due date. Edit it if you paid a different amount, or delete it if you didn't pay.</Note>}
       <div className="fields two">
         <Field label="Amount">{(id) => <MoneyInput id={id} value={amount} onChange={setAmount} />}</Field>
-        <Field label="Paid on">{(id) => <DateInput id={id} value={date} onChange={setDate} />}</Field>
+        <Field label="Paid on">{(id) => <DateInput id={id} value={date} onChange={setDate} max={today} />}</Field>
       </div>
       <Field label="Note">{(id) => <TextInput id={id} value={note} onChange={setNote} />}</Field>
       <dl className="kv">
