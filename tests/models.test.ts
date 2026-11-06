@@ -69,3 +69,32 @@ describe('timeline', () => {
     expect(d.endBalance).toBe(1726.99);
   });
 });
+
+describe('running balances are continuous and exact', () => {
+  for (const name of ['sample-biweekly', 'two-incomes', 'tight-monthly']) {
+    it(name, async () => {
+      const { importV117: imp } = await import('../src/data/importV117');
+      const { entriesForDay, rowAt, monthStartAdjustment } = await import('../src/state/models');
+      const { addMonthsKey, monthStartMs, monthEndMs, addDaysMs } = await import('../src/engine/dates');
+      const rawF = JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', `${name}.v117.json`), 'utf8'));
+      const eng = new PlanEngine(imp(rawF, '2026-11-06').data, { today: '2026-11-06', fixes: ALL_FIXES });
+      for (let i = -1; i < 13; i++) {
+        const mk = addMonthsKey('2026-11', i);
+        for (let ms = monthStartMs(mk); ms <= monthEndMs(mk); ms = addDaysMs(ms, 1)) {
+          const entries = entriesForDay(eng, ms);
+          const row = rowAt(eng, ms)!;
+          if (entries.length) expect(entries[entries.length - 1].billsAfter).toBe(row.billsBalanceWorking);
+        }
+        const first = entriesForDay(eng, monthStartMs(mk));
+        const delta = monthStartAdjustment(eng, mk);
+        const prevEnd = rowAt(eng, addDaysMs(monthStartMs(mk), -1))!.billsBalanceWorking;
+        if (Math.abs(delta) >= 1) {
+          expect(first[0].kind).toBe('adjust');
+          expect(Math.round((prevEnd + first[0].amount) * 100) / 100).toBe(eng.plan(mk).seedWanted);
+        } else {
+          expect(first.some((e) => e.kind === 'adjust')).toBe(false);
+        }
+      }
+    });
+  }
+});

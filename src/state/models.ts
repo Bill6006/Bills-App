@@ -65,6 +65,17 @@ export function balanceBeforeDay(engine: PlanEngine, ms: number): { bills: numbe
   return { bills: prev?.billsBalanceWorking ?? plan.seedWanted, savings: prev?.savingsBalance ?? plan.startSavings };
 }
 
+/**
+ * Each month's plan starts from what that month needs. When the previous month leaves more than that,
+ * the difference is extra you can move out; when it leaves less, it has to be added.
+ */
+export function monthStartAdjustment(engine: PlanEngine, mk: MonthKey): number {
+  const plan = engine.plan(mk);
+  const prev = rowAt(engine, addDaysMs(plan.monthStart, -1));
+  if (!prev) return 0;
+  return round2(plan.seedWanted - prev.billsBalanceWorking);
+}
+
 export function nextPaydayOnOrAfter(engine: PlanEngine, ms: number): number | null {
   let mk = isoDate(ms).slice(0, 7);
   for (let g = 0; g < 24; g++) {
@@ -88,8 +99,10 @@ export function lowestBetween(engine: PlanEngine, fromMs: number, toMs: number):
 export interface Entry {
   key: string;
   ms: number;
-  kind: 'payday' | 'bill' | 'withdrawal';
+  /** adjust: the plan's start-of-month reset (extra left over you can move out, or money to add). */
+  kind: 'payday' | 'bill' | 'withdrawal' | 'adjust';
   title: string;
+  detail?: string;
   /** Effect on the Bills account (payday: +transfer, bill: −amount) or Savings (withdrawal: −amount). */
   amount: number;
   savingsMove?: number;
@@ -106,6 +119,20 @@ export function entriesForDay(engine: PlanEngine, ms: number): Entry[] {
   const start = balanceBeforeDay(engine, ms);
   let bills = start.bills, savings = start.savings;
   const out: Entry[] = [];
+  const mk = isoDate(ms).slice(0, 7);
+  if (ms === monthStartMs(mk)) {
+    const delta = monthStartAdjustment(engine, mk);
+    // Sub-dollar differences are rounding; the plan simply starts from what the month needs.
+    if (Math.abs(delta) >= 1) {
+      const prevName = monthLong(parseMonthKey(addMonthsKey(mk, -1)).m);
+      out.push({
+        key: `adj-${ms}`, ms, kind: 'adjust',
+        title: delta < 0 ? 'Extra you can move out' : 'Add to the Bills account',
+        detail: delta < 0 ? `Left over from ${prevName}` : `${monthLong(parseMonthKey(mk).m)} needs more than ${prevName} leaves`,
+        amount: delta, billsAfter: start.bills, savingsAfter: savings,
+      });
+    }
+  }
   if (r.isPayday) {
     bills = round2(bills + r.transferIn);
     savings = round2(savings + r.savingsIn);
@@ -204,25 +231,26 @@ export function alertsFor(engine: PlanEngine): Alert[] {
   const todayMs = parseISOToMs(today);
   const out: Alert[] = [];
   const s = engine.settings;
-  // Pay periods from now: under the minimum, or no spending money at all.
+  // Pay periods from now: under the minimum, or no spending money at all (one alert each kind).
   let p = periodForDate(engine, today);
+  const short: Array<{ range: string; start: IsoDate; m: MinimumInfo }> = [];
   for (let i = 0; i < 3; i++) {
     const info = p.startsOnPayday ? paydayInfo(engine, p.startMs) : null;
     if (info) {
       const range = fmtRange(p.startMs, p.endMs);
       if (info.spending <= 0.004) {
         out.push({ id: `nospend-${p.startIso}`, tone: 'bad', text: `${range}: the Bills and Savings moves take the whole ${fmtMoney(info.paycheck)} paycheck, leaving nothing to spend.`, action: { label: 'See why', to: '/timeline' } });
-      } else if (info.minimum) {
-        const m = info.minimum;
-        out.push({
-          id: `min-${p.startIso}`, tone: 'warn',
-          text: m.mode === 'base'
-            ? `${range}: spending money is ${fmtMoney(m.base)}, ${fmtMoney(m.shortBy)} under your ${fmtMoney(m.minimum)} minimum.`
-            : `${range}: budgets leave ${fmtMoney(m.net)} free, ${fmtMoney(m.shortBy)} under your ${fmtMoney(m.minimum)} minimum.`,
-        });
-      }
+      } else if (info.minimum) short.push({ range, start: p.startIso, m: info.minimum });
     }
     p = nextPeriod(engine, p);
+  }
+  if (short.length) {
+    const f = short[0].m;
+    const what = f.mode === 'base' ? `spending money is ${fmtMoney(f.base)}` : `budgets leave ${fmtMoney(f.net)} free`;
+    const rest = short.length > 1
+      ? (short.every((x) => Math.abs(x.m.metricValue - f.metricValue) < 0.005) ? ` The same goes for the next ${short.length - 1 === 1 ? 'pay period' : `${short.length - 1} pay periods`}.` : ` ${short.length - 1} more pay period${short.length - 1 === 1 ? ' is' : 's are'} short too.`)
+      : '';
+    out.push({ id: `min-${short[0].start}`, tone: 'warn', text: `${short[0].range}: ${what}, ${fmtMoney(f.shortBy)} under your ${fmtMoney(f.minimum)} minimum.${rest}`, action: { label: 'Safety net', to: '/plan/safety' } });
   }
   // Months where paychecks can't cover the bills on their own.
   for (let i = 0; i < 3; i++) {

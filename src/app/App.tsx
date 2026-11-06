@@ -1,44 +1,81 @@
 import { useEffect } from 'react';
-import { useRoute } from './router';
+import { navigate, useRoute } from './router';
 import { Sidebar, TabBar } from './Shell';
 import { ToastHost } from '../ui/components/ToastHost';
-import { Guilloche } from '../ui/components/Guilloche';
-import { toast } from '../state/toast';
+import { SheetHost } from '../ui/components/Sheet';
+import { discardWhatIf, hydrate, keepWhatIf, replaceAll, useActive, useStore } from '../state/store';
+import { isEmptyData, makeDefaultData } from '../data/defaults';
+import { Home } from '../ui/screens/Home';
+import { Timeline } from '../ui/screens/Timeline';
+import { Welcome } from '../ui/screens/Welcome';
+import { Spending } from '../ui/screens/Spending';
+import { Plan } from '../ui/screens/Plan';
+import { openQuickAdd } from '../ui/sheets/QuickAdd';
+import type { ThemePref } from '../engine/types';
 
-function useThemeColor() {
-  useEffect(() => {
-    const apply = () => {
-      const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
-      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', bg || '#0B1310');
-    };
-    apply();
-    const mq = window.matchMedia('(prefers-color-scheme: light)');
-    mq.addEventListener('change', apply);
-    return () => mq.removeEventListener('change', apply);
-  }, []);
+function applyTheme(theme: ThemePref) {
+  const root = document.documentElement;
+  if (theme === 'system') root.removeAttribute('data-theme');
+  else root.setAttribute('data-theme', theme);
+  const bg = getComputedStyle(root).getPropertyValue('--bg').trim();
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', bg || '#0B1310');
 }
 
-const TITLES = { home: 'Home', timeline: 'Timeline', spending: 'Spending', plan: 'Plan' } as const;
+function useTheme(theme: ThemePref) {
+  useEffect(() => {
+    applyTheme(theme);
+    const mq = window.matchMedia('(prefers-color-scheme: light)');
+    const on = () => applyTheme(theme);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, [theme]);
+}
 
 export function App() {
+  const hydrated = useStore((s) => s.hydrated);
+  const whatIf = useStore((s) => s.whatIf);
+  const realData = useStore((s) => s.data);
+  const today = useStore((s) => s.today);
+  const data = useActive();
   const route = useRoute();
-  useThemeColor();
-  const onAdd = () => toast('Quick add arrives with the next update.');
+  useTheme(data.prefs.theme);
+  useEffect(() => { void hydrate(); }, []);
+
+  if (!hydrated) {
+    return <div className="splash" aria-label="Loading"><span className="brand-mark big">B</span></div>;
+  }
+
+  const empty = isEmptyData(realData) && !realData.meta.importedFrom;
+  let screen;
+  switch (route.tab) {
+    case 'timeline': screen = <Timeline monthParam={route.parts[1]} />; break;
+    case 'spending': screen = <Spending />; break;
+    case 'plan': screen = <Plan parts={route.parts.slice(1)} />; break;
+    default: screen = empty ? <Welcome /> : <Home />;
+  }
+
+  const banner = whatIf ? 'whatif' : realData.meta.sample ? 'sample' : null;
   return (
     <div className="shell">
-      <Sidebar active={route.tab} onAdd={onAdd} />
-      <main className="main" id="main">
-        <div className="page page-narrow" key={route.tab}>
-          <div className="page-head"><div className="titles"><div className="eyebrow">Bills Planner</div><h1 className="page-title">{TITLES[route.tab]}</h1></div></div>
-          <section className="hero">
-            <Guilloche />
-            <div className="lbl">Being rebuilt</div>
-            <p style={{ fontWeight: 700, fontSize: 17, lineHeight: 1.4, maxWidth: 420 }}>The new Bills Planner is installing piece by piece. Next up: importing your data from v117 and the Home screen.</p>
-            <p className="sub">Your data stays on this device. Nothing is uploaded.</p>
-          </section>
+      {banner === 'whatif' && (
+        <div className="banner whatif" role="status">
+          <div className="grow"><div>What-if mode</div><div className="sub">Changes here aren't saved until you keep them.</div></div>
+          <button type="button" className="btn sm ghost" onClick={discardWhatIf}>Discard</button>
+          <button type="button" className="btn sm" onClick={keepWhatIf}>Keep</button>
         </div>
+      )}
+      {banner === 'sample' && (
+        <div className="banner sample" role="status">
+          <div className="grow"><div>Sample data</div><div className="sub">Made-up numbers to look around with.</div></div>
+          <button type="button" className="btn sm ghost" onClick={() => { replaceAll(makeDefaultData(today), 'Sample data cleared.'); navigate('/'); }}>Clear</button>
+        </div>
+      )}
+      <Sidebar active={route.tab} onAdd={openQuickAdd} />
+      <main className={`main${banner ? ' has-banner' : ''}`} id="main" key={route.tab}>
+        {screen}
       </main>
-      <TabBar active={route.tab} onAdd={onAdd} />
+      <TabBar active={route.tab} onAdd={openQuickAdd} />
+      <SheetHost />
       <ToastHost />
     </div>
   );

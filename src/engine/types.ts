@@ -174,6 +174,8 @@ export interface AppData {
     updatedAt: string;
     importedFrom?: { app: 'v117'; at: string; fileName?: string };
     lastBackupAt?: string;
+    /** Loaded from the built-in sample, not the user's own data. */
+    sample?: boolean;
   };
 }
 
