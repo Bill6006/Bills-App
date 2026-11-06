@@ -117,6 +117,12 @@ export interface SpendEntry {
   date: IsoDate;
   note: string;
   createdAt: string;
+  /** Store name, when known (imported from the bank or matched to an import). Used to learn budgets. */
+  merchant?: string;
+  /** Normalized store key used for matching, e.g. "walmart". */
+  merchantKey?: string;
+  /** The bank transaction this log came from. */
+  bankTxnId?: string;
 }
 
 export interface SpendTransfer {
@@ -140,6 +146,58 @@ export interface SavingsEvent {
   rule: Rule;
   /** Derived display name, kept for compatibility with v117 data. */
   name: string;
+}
+
+/** One line from a bank statement file, kept so later imports skip it and so it can be reviewed. */
+export interface BankTxn {
+  id: string;
+  date: IsoDate;
+  /** Signed like the bank's money flow: negative is money out. */
+  amount: number;
+  description: string;
+  merchant: string;
+  merchantKey: string;
+  bankCategory?: string;
+  account?: string;
+  status: 'logged' | 'review' | 'skipped';
+  /** Why: auto, you, rule, matched (already logged), transfer, paycheck, bill, card payment, money in. */
+  how: string;
+  entryIds: string[];
+  importedAt: string;
+  /** Best guesses when it needs a look: budget ids with likelihoods. */
+  suggest?: Array<{ extraId: string; p: number }>;
+  /** A log you entered yourself that might be this same purchase. */
+  maybeSameAs?: string;
+}
+
+/** Your own rule for a store: always file it in a budget, always ask, or always skip it. */
+export interface MerchantRule { key: string; name: string; action: 'budget' | 'ask' | 'skip'; extraId?: string }
+
+/** How to read one bank's CSV layout, remembered after you confirm it once. */
+export interface CsvProfile {
+  signature: string;
+  date: number;
+  description: number;
+  memo: number | null;
+  amount: number | null;
+  debit: number | null;
+  credit: number | null;
+  category: number | null;
+  status: number | null;
+  /** A column saying "Debit"/"Credit" when amounts are all positive. */
+  indicator: number | null;
+  /** True when money out is shown as a negative number. */
+  outNegative: boolean;
+  dateOrder: 'mdy' | 'dmy' | 'ymd';
+}
+
+export interface BankData {
+  txns: BankTxn[];
+  rules: MerchantRule[];
+  profiles: CsvProfile[];
+  lastImportAt?: string;
+  /** Latest transaction date seen in an import. */
+  lastTxnDate?: IsoDate;
 }
 
 export type ThemePref = 'system' | 'dark' | 'light';
@@ -173,6 +231,8 @@ export interface AppData {
   spendEntries: SpendEntry[];
   spendTransfers: SpendTransfer[];
   events: SavingsEvent[];
+  /** Bank statement imports and what the app learned from them. */
+  bank: BankData;
   order: { bills: string[]; extras: string[] };
   prefs: Prefs;
   meta: {

@@ -19,6 +19,16 @@ Every paycheck splits three ways: a fixed amount moves to your **Bills account**
 
 Tap any big number to see how it was worked out. **What-if mode** (Plan or Settings) lets you try a change and keep or discard it; Home shows your real plan next to it.
 
+## Spending from your bank
+
+Instead of logging each purchase, download your transactions from your bank (CSV, QFX or OFX; not PDF) and import the file under **Spending › Import from your bank**.
+
+- **It files purchases for you** when it's sure, using your own history: the stores you've used and the amounts. At a gas station a fill-up goes to Gas and a snack to Groceries, and amounts in between are left for you to pick. Every correction teaches it; a store can also be set to always use one budget, always ask, or always skip (**Plan › Bank import**).
+- **To review** holds the rest: one tap for a suggested budget, **Split** to divide one purchase across budgets, or **Not spending**.
+- **Not spending is skipped**: transfers between your accounts, your paycheck, card payments and bills that are already in your plan.
+- **Nothing is counted twice**: transactions from earlier imports are recognized (the bank's id in QFX/OFX; date, amount and text in CSV, with identical same-day purchases kept apart), the same purchase from a CSV and a QFX is matched, purchases you logged by hand are linked instead of added, and pending charges wait until they post. A whole import can be removed again.
+- The first CSV from a bank shows how its columns were read so you can correct them once; after that the layout is remembered.
+
 ## Loans update themselves
 
 Each loan's payment is planned as a bill on its due day. With automatic payments on (the default), the balance drops on each due date as if the scheduled payment went through, so there's nothing to log month to month. Log a payment only when it's extra or different:

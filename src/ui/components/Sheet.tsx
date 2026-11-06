@@ -32,7 +32,7 @@ export interface SheetProps {
 /** A bottom sheet on phones and a centered dialog on wider screens. Swipe down on the header to close. */
 export function Sheet({ title, onClose, children, footer, eyebrow, headerAction, label }: SheetProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const { closing } = useContext(SheetCtx);
+  const { id, closing } = useContext(SheetCtx);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
 
@@ -44,8 +44,19 @@ export function Sheet({ title, onClose, children, footer, eyebrow, headerAction,
       const auto = el.querySelector<HTMLElement>('[data-autofocus]');
       (auto || el).focus({ preventScroll: true });
     }, 80);
+    // Escape closes the top sheet even when focus was lost (e.g. the button you tapped disappeared).
+    const onDocKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const open = useSheets.getState().stack.filter((x) => !x.closing);
+      if (open[open.length - 1]?.id !== id) return;
+      e.preventDefault();
+      closeRef.current();
+    };
+    const onFocusOut = (e: FocusEvent) => {
+      if (e.relatedTarget) return;
+      requestAnimationFrame(() => { if (document.activeElement === document.body && el.isConnected) el.focus({ preventScroll: true }); });
+    };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopPropagation(); closeRef.current(); }
       if (e.key === 'Tab') {
         const items = Array.from(el.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')).filter((x) => !x.hasAttribute('disabled'));
         if (!items.length) return;
@@ -55,15 +66,20 @@ export function Sheet({ title, onClose, children, footer, eyebrow, headerAction,
       }
     };
     el.addEventListener('keydown', onKey);
+    el.addEventListener('focusout', onFocusOut);
+    document.addEventListener('keydown', onDocKey);
     const body = document.body;
     const prevOverflow = body.style.overflow;
     body.style.overflow = 'hidden';
     return () => {
       window.clearTimeout(t);
       el.removeEventListener('keydown', onKey);
+      el.removeEventListener('focusout', onFocusOut);
+      document.removeEventListener('keydown', onDocKey);
       body.style.overflow = prevOverflow;
       prev?.focus?.({ preventScroll: true });
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Swipe down on the header to dismiss (phones only).

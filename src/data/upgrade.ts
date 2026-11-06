@@ -51,6 +51,10 @@ export function upgradeData(raw: unknown, today: IsoDate): AppData {
     spendEntries: arr(r.spendEntries),
     spendTransfers: arr(r.spendTransfers),
     events: arr(r.events),
+    bank: (() => {
+      const b = isObj(r.bank) ? (r.bank as Partial<AppData['bank']>) : {};
+      return { ...b, txns: arr(b.txns), rules: arr(b.rules), profiles: arr(b.profiles) } as AppData['bank'];
+    })(),
     order: { bills: fixOrder(order.bills, bills.map((b) => b.id)), extras: fixOrder(order.extras, extras.map((x) => x.id)) },
     prefs,
     meta: { ...base.meta, ...(isObj(r.meta) ? r.meta : {}) },

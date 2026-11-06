@@ -98,3 +98,27 @@ dl.kv { margin: 0; }
 .kv dd .block { display: block; font-size: 12px; font-weight: 650; color: var(--muted); margin-top: 1px; }
 .past-toggle { width: 100%; text-align: left; color: inherit; }
 .hero .whatif-diff { color: var(--text-2); font-size: 13px; padding: 5px 10px; border-radius: 10px; width: fit-content; max-width: 100%; background: color-mix(in oklab, var(--bills) 16%, transparent); }
+
+/* ---------- Bank import ---------- */
+.btn-row.wrap { flex-wrap: wrap; }
+.review-banner { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; border-color: color-mix(in oklab, var(--brass) 40%, var(--line)); }
+.review-banner > svg { width: 16px; height: 16px; color: var(--faint); }
+.review-banner .main-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.review-item { gap: 10px; }
+.review-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; }
+.review-head .main-col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.review-head .trail { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.review-head .strong { font-size: 16px; }
+.mono-ish { font-variant-numeric: tabular-nums; letter-spacing: .01em; overflow-wrap: anywhere; }
+.cp.on-soft { border-color: color-mix(in oklab, var(--brass) 55%, transparent); background: color-mix(in oklab, var(--brass) 10%, transparent); font-weight: 800; }
+.cp.ghost-cp { background: transparent; }
+.split-editor { display: grid; gap: 8px; }
+.split-row { display: grid; grid-template-columns: minmax(0, 1fr) 132px 34px; gap: 8px; align-items: center; }
+.split-row .select { width: 100%; }
+.split-rest { font-weight: 800; text-align: right; padding-right: 12px; font-variant-numeric: tabular-nums; }
+.split-gap { width: 34px; }
+details.disclosure > summary { list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; }
+details.disclosure > summary::-webkit-details-marker { display: none; }
+details.disclosure > summary svg { width: 16px; height: 16px; color: var(--muted); transition: transform var(--dur-2) var(--ease-out); }
+details.disclosure[open] > summary svg { transform: rotate(180deg); }
+details.disclosure:not(.card) > summary { padding: 6px 0; }

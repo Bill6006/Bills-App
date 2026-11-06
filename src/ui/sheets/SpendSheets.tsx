@@ -49,6 +49,7 @@ function LogSpendSheet({ entryId, categoryId, date, onClose }: { entryId?: strin
     if (!valid) return;
     const signed = type === 'refund' ? -round2(amount) : round2(amount);
     const entry: SpendEntry = {
+      ...(existing ?? {}),
       id: existing?.id ?? newId('xs'), extraId: cat, extraName: cat === MISC_ID ? 'Misc' : name, amount: signed, entryType: type,
       date: day, note: note.trim(), createdAt: existing?.createdAt || new Date().toISOString(),
     };
@@ -61,7 +62,15 @@ function LogSpendSheet({ entryId, categoryId, date, onClose }: { entryId?: strin
   };
   const remove = () => {
     if (!existing) return;
-    update((d) => { d.spendEntries = d.spendEntries.filter((e) => e.id !== existing.id); }, { undo: 'Spending log deleted.' });
+    update((d) => {
+      d.spendEntries = d.spendEntries.filter((e) => e.id !== existing.id);
+      // An imported purchase you delete stays out of future imports.
+      const t = existing.bankTxnId ? d.bank.txns.find((x) => x.id === existing.bankTxnId) : undefined;
+      if (t) {
+        t.entryIds = t.entryIds.filter((id) => id !== existing.id);
+        if (!t.entryIds.length) { t.status = 'skipped'; t.how = 'you'; }
+      }
+    }, { undo: 'Spending log deleted.' });
     onClose();
   };
 
@@ -84,6 +93,10 @@ function LogSpendSheet({ entryId, categoryId, date, onClose }: { entryId?: strin
         <Field label="Date">{(id) => <DateInput id={id} value={day} onChange={setDay} />}</Field>
         <Field label="Note">{(id) => <TextInput id={id} value={note} onChange={setNote} placeholder="Store or note" />}</Field>
       </div>
+      {existing?.bankTxnId && (() => {
+        const t = data.bank.txns.find((x) => x.id === existing.bankTxnId);
+        return t ? <p className="sub">From your bank: {t.description}{t.entryIds.length > 1 ? ` (split, ${fmtMoney(Math.abs(t.amount))} total)` : ''}. Changing the budget teaches the app for next time.</p> : null;
+      })()}
       {preview && (
         <Note tone={preview.left < 0 ? 'bad' : 'ok'}>
           {cat === MISC_ID ? 'Unassigned' : name} will have {preview.left < 0 ? `${fmtMoney(-preview.left)} over budget` : `${fmtMoney(preview.left)} left`} until {preview.until}.

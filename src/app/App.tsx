@@ -67,7 +67,7 @@ export function App() {
   let screen;
   switch (route.tab) {
     case 'timeline': screen = <Timeline monthParam={route.parts[1]} />; break;
-    case 'spending': screen = <Spending />; break;
+    case 'spending': screen = <Spending sub={route.parts[1]} />; break;
     case 'plan': screen = <Plan parts={route.parts.slice(1)} />; break;
     default: screen = empty ? <Welcome /> : <Home />;
   }

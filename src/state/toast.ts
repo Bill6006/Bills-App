@@ -11,7 +11,8 @@ let seq = 0;
 export function toast(text: string, opts: { action?: ToastAction; duration?: number } = {}): number {
   const id = ++seq;
   const t: Toast = { id, text, action: opts.action, duration: opts.duration ?? (opts.action ? 6000 : 3200) };
-  useToasts.setState((s) => ({ toasts: [...s.toasts.slice(-2), t] }));
+  // Undo only reaches the latest change, so only the newest toast keeps an Undo button.
+  useToasts.setState((s) => ({ toasts: [...s.toasts.filter((x) => !(t.action && x.action)).slice(-1), t] }));
   if (t.duration > 0) window.setTimeout(() => dismissToast(id), t.duration);
   return id;
 }

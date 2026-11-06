@@ -49,6 +49,7 @@ export function makeDefaultData(today: IsoDate, nowIso: string = new Date().toIS
     spendEntries: [],
     spendTransfers: [],
     events: [],
+    bank: { txns: [], rules: [], profiles: [] },
     order: { bills: [], extras: [] },
     prefs: { ...DEFAULT_PREFS, paydayChecks: {}, graphHiddenIds: [] },
     meta: { createdAt: nowIso, updatedAt: nowIso },

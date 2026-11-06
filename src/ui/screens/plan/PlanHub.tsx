@@ -22,6 +22,7 @@ import { IncomePage } from './Income';
 import { LoansPage } from './Loans';
 import { SavingsPage } from './Savings';
 import { PlanHeader } from './common';
+import { BankPage } from './BankPage';
 
 /** /plan and its pages. */
 export function Plan({ parts }: { parts: string[] }) {
@@ -35,6 +36,7 @@ export function Plan({ parts }: { parts: string[] }) {
     case 'safety': return <SafetyPage />;
     case 'settings': return <SettingsPage />;
     case 'backup': return <BackupPage />;
+    case 'bank': return <BankPage />;
     default: return <Hub />;
   }
 }
@@ -100,6 +102,9 @@ function Hub() {
           value={active.length ? fmtMoney(owed) : data.debts.length ? 'All paid off' : 'None'} sub={active.length ? (lastPayoff ? `Debt-free ${fmtMonthLong(lastPayoff)}` : 'Check the payment') : undefined} />
         <Tile icon={<IconShield />} tone="w" title="Safety net" to="/plan/safety"
           value={`${fmtMoney(s.cushion)} cushion`} sub={s.pocket.minimumSurvival > 0 ? `Warn under ${fmtMoney(s.pocket.minimumSurvival)}` : 'No minimum set'} />
+        <Tile icon={<IconFile />} tone="p" title="Bank import" to="/plan/bank"
+          value={data.bank.lastImportAt ? `Imported ${fmtShort(Date.parse(data.bank.lastImportAt))}` : 'Not set up'}
+          sub={data.bank.txns.some((t) => t.status === 'review') ? `${data.bank.txns.filter((t) => t.status === 'review').length} to review` : 'Files purchases for you'} />
         <Tile icon={<IconDownload />} tone="n" title="Backup & import" to="/plan/backup"
           value={backupAge == null ? 'No backup yet' : backupAge === 0 ? 'Backed up today' : `Backed up ${backupAge}d ago`} />
         <Tile icon={<IconGear />} tone="n" title="Settings" to="/plan/settings"

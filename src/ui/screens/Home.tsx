@@ -72,6 +72,7 @@ export function Home() {
             </div>
             <Meter pct={budget > 0 ? (spent / budget) * 100 : 0} tone={spent > budget ? 'bad' : undefined} label="Spent this pay period" />
             <div className="row-between sub"><span>{fmtMoney(spent)} spent of {fmtMoney(budget)}</span><span className="link-btn">Spending <IconChevronRight /></span></div>
+            {data.bank.lastTxnDate && <span className="sub">Bank purchases imported through {fmtShort(parseISOToMs(data.bank.lastTxnDate))}</span>}
           </button>
 
           {showChecklist && startPay && <PaydayChecklist info={startPay} checks={data.prefs.paydayChecks[isoDate(startPay.ms)] || {}} isToday={startPay.ms === m.todayMs} />}

@@ -13,11 +13,14 @@ import { Segmented } from '../components/controls';
 import { LogRow, openBudgetDetail, openLogSpend, openMoveMoney } from '../sheets/SpendSheets';
 import { openWhy } from '../sheets/WhySheet';
 import { Trends } from './SpendingTrends';
-import { IconChevronLeft, IconChevronRight, IconEnvelope, IconMove, IconPlus, IconSearch } from '../icons';
+import { IconChevronLeft, IconChevronRight, IconEnvelope, IconFile, IconMove, IconPlus, IconSearch } from '../icons';
+import { openBankImport } from '../sheets/BankImportSheet';
+import { openReview } from '../sheets/ReviewSheet';
+import { useOpenOnRoute } from './plan/common';
 
 type View = 'budgets' | 'history' | 'trends';
 
-export function Spending() {
+export function Spending({ sub }: { sub?: string }) {
   const engine = useEngine();
   const data = useActive();
   const today = engine.today();
@@ -45,6 +48,8 @@ export function Spending() {
   const goNow = () => { setAnchor(today); setMk(today.slice(0, 7)); };
 
   const trendsMonth = kind === 'month' ? mk : isoDate(range.endMs).slice(0, 7);
+  const reviewCount = data.bank.txns.filter((t) => t.status === 'review').length;
+  useOpenOnRoute(sub === 'review' || sub === 'import', '/spending', () => (sub === 'review' ? openReview() : openBankImport()));
   const noBudgets = !data.extras.length && !data.spendEntries.length;
 
   return (
@@ -65,6 +70,14 @@ export function Spending() {
         {view === 'budgets' && <Segmented size="sm" label="Time span" value={kind} onChange={setKind} options={[{ value: 'period', label: 'Pay period' }, { value: 'month', label: 'Month' }]} />}
         {!isCurrent && view === 'budgets' && <button type="button" className="btn ghost sm" onClick={goNow}>Back to now</button>}
       </div>
+
+      {reviewCount > 0 && (
+        <button type="button" className="card tap review-banner" onClick={openReview}>
+          <span className="icon-badge p"><IconFile /></span>
+          <span className="main-col"><span className="strong">{reviewCount} imported purchase{reviewCount === 1 ? '' : 's'} need a budget</span><span className="sub">A tap each. The app learns from your picks.</span></span>
+          <IconChevronRight />
+        </button>
+      )}
 
       {view === 'budgets' && (noBudgets ? (
         <section className="card">
@@ -116,6 +129,8 @@ function Budgets({ engine, data, scopeKind, range: r, isCurrent: cur, today: t, 
           <button type="button" className="btn" onClick={() => openLogSpend({ date: logDate })}><IconPlus />Log spending</button>
           {scopeKind === 'period' && <button type="button" className="btn ghost" onClick={() => openMoveMoney({ date: logDate })}><IconMove />Move money</button>}
         </div>
+        <button type="button" className="btn ghost block" onClick={openBankImport}><IconFile />Import from your bank</button>
+        {data.bank.lastTxnDate && cur && <p className="sub center">Bank purchases imported through {fmtShort(parseISOToMs(data.bank.lastTxnDate))}.</p>}
 
         <section className="card flush">
           <div className="list">

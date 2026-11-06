@@ -27,12 +27,13 @@ function QuickAddSheet({ onClose }: { onClose: () => void }) {
     <Sheet title="Add" onClose={onClose}>
       <div className="card flush"><div className="list">
         <Action icon={<IconEnvelope />} tone="p" title="Log spending" sub="A purchase or a refund" onClick={then(() => (qa.logSpend ? qa.logSpend() : navigate('/spending')))} />
+        <Action icon={<IconFile />} tone="p" title="Import from your bank" sub="A CSV, QFX or OFX download; purchases get filed for you" onClick={then(() => (qa.bankImport ? qa.bankImport() : navigate('/spending/import')))} />
         <Action icon={<IconMove />} tone="p" title="Move money between budgets" sub="Shift spending money from one budget to another" onClick={then(() => (qa.moveMoney ? qa.moveMoney() : navigate('/spending')))} />
         <Action icon={<IconReceipt />} tone="b" title="Add a bill" sub="Paid from the Bills account" onClick={then(() => navigate('/plan/bills/new'))} />
         <Action icon={<IconCard />} tone="b" title="Log a loan payment" sub="Only needed when it was different from the plan" onClick={then(() => navigate('/plan/loans'))} />
         <Action icon={<IconTrend />} tone="s" title="Plan a savings withdrawal" sub="Gifts, travel, a big purchase" onClick={then(() => navigate('/plan/savings/new'))} />
         <Action icon={<IconDollar />} tone="s" title="Add extra income" sub="A bonus, side gig or refund" onClick={then(() => navigate('/plan/income/extra-new'))} />
-        <Action icon={<IconFile />} tone="n" title="Import or restore" sub="From Bills Account Planner or a backup" onClick={then(openImport)} />
+        <Action icon={<IconFile />} tone="n" title="Restore a backup" sub="Or import from Bills Account Planner" onClick={then(openImport)} />
       </div></div>
     </Sheet>
   );

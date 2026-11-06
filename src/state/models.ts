@@ -281,6 +281,12 @@ export function alertsFor(engine: PlanEngine): Alert[] {
     }
   }
   const data = engine.data;
+  const toReview = data.bank.txns.filter((t) => t.status === 'review').length;
+  if (toReview) out.push({ id: 'bank-review', tone: 'info', text: `${toReview} imported purchase${toReview === 1 ? ' needs' : 's need'} a budget.`, action: { label: 'Review', to: '/spending/review' } });
+  const lastImport = data.bank.lastImportAt ? Date.parse(data.bank.lastImportAt) : NaN;
+  if (Number.isFinite(lastImport) && todayMs - lastImport > 8 * 86400000) {
+    out.push({ id: 'bank-import', tone: 'info', text: `Your last bank import was ${Math.floor((todayMs - lastImport) / 86400000)} days ago. Import again so "left to spend" stays right.`, action: { label: 'Import', to: '/spending/import' } });
+  }
   const hasData = data.bills.length || data.debts.length || data.spendEntries.length;
   const last = data.meta.lastBackupAt ? Date.parse(data.meta.lastBackupAt) : NaN;
   if (hasData && (!Number.isFinite(last) || todayMs - last > 14 * 86400000)) {
