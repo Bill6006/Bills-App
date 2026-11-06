@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { addMonthsKey, fmtMonthLong, fmtMonthShort, fmtShort, parseISOToMs, type MonthKey } from '../../../engine/dates';
+import { addMonthsKey, fmtDow, fmtMonthLong, fmtMonthShort, fmtShort, parseISOToMs, type MonthKey } from '../../../engine/dates';
 import { clampInt, fmtMoney, fmtMoneyCompact, round2 } from '../../../engine/money';
 import { newId } from '../../../engine/loans';
 import { describeRule } from '../../../engine/schedule';
@@ -74,6 +74,7 @@ export function SavingsPage({ sub }: { sub?: string }) {
   }, [data.events, s, today]);
 
   const last = points[points.length - 1];
+  const paydaysThisMonth = plan.rows.filter((r) => r.isPayday && r.savingsIn > 0);
 
   return (
     <div className="page page-narrow">
@@ -93,6 +94,20 @@ export function SavingsPage({ sub }: { sub?: string }) {
         <SavingsChart points={points} />
         <p className="sub">{points.some((p) => p.withdrawn > 0) ? 'Month-end balance. Dots mark months with a planned withdrawal.' : 'Month-end balance. No withdrawals are planned in this time.'}</p>
       </section>
+
+      {paydaysThisMonth.length > 0 && (
+        <section className="card flush">
+          <div className="card-head pad"><span className="lbl">Paydays this month</span><span className="sub">{fmtMonthLong(mk)}</span></div>
+          <div className="list">
+            {paydaysThisMonth.map((r) => (
+              <div key={r.ms} className={`row no-lead ${r.ms < parseISOToMs(today) ? 'is-past' : ''}`}>
+                <span className="main-col"><span className="title">{fmtDow(r.ms)}</span><span className="sub">Payday{r.savingsOut > 0 ? ` · −${fmtMoney(r.savingsOut)} withdrawn` : ''}</span></span>
+                <span className="trail"><Amount value={r.savingsIn} signed tone="pos" /><span className="sub">{fmtMoney(r.savingsBalance)} after</span></span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="card">
         <span className="lbl">Your plan</span>
@@ -154,12 +169,12 @@ export function SavingsPage({ sub }: { sub?: string }) {
         <div className="card-head pad"><span className="lbl">Month by month</span><span className="sub">+{fmtMoney(s.savings.monthlyGoal)} each month</span></div>
         <div className="table-scroll">
           <table className="mini-table">
-            <thead><tr><th scope="col">Month</th><th scope="col">Withdrawals</th><th scope="col">End balance</th></tr></thead>
+            <thead><tr><th scope="col">Month</th><th scope="col">Start</th><th scope="col">End</th></tr></thead>
             <tbody>
               {points.map((p) => (
                 <tr key={p.mk} className={p.mk === mk ? 'is-now' : ''}>
-                  <th scope="row">{fmtMonthShort(p.mk)}</th>
-                  <td>{p.withdrawn ? `−${fmtMoney(p.withdrawn)}` : '—'}</td>
+                  <th scope="row">{fmtMonthShort(p.mk)}{p.withdrawn > 0 && <span className="sub block-sub">−{fmtMoney(p.withdrawn)} withdrawn</span>}</th>
+                  <td>{fmtMoney(p.start)}</td>
                   <td className="strong">{fmtMoney(p.end)}</td>
                 </tr>
               ))}

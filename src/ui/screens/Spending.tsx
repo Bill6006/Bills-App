@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
-import { addMonthsKey, fmtShort, isoDate, parseISOToMs, type IsoDate, type MonthKey } from '../../engine/dates';
+import { addMonthsKey, fmtRange, fmtShort, isoDate, parseISOToMs, type IsoDate, type MonthKey } from '../../engine/dates';
 import { fmtMoney } from '../../engine/money';
-import { periodForDate } from '../../engine/spending';
+import { nextPeriod, periodForDate, snapshotForRange } from '../../engine/spending';
+import { occurrencesForRange } from '../../engine/schedule';
+import { paydayInfo } from '../../state/models';
 import { MISC_ID, type AppData } from '../../engine/types';
 import type { PlanEngine } from '../../engine/plan';
 import { navigate } from '../../app/router';
@@ -85,7 +87,12 @@ export function Spending({ sub }: { sub?: string }) {
           <button type="button" className="btn" onClick={() => navigate('/plan/budgets')}><IconPlus />Add a budget</button>
           <button type="button" className="btn ghost" onClick={() => openLogSpend({})}>Log spending anyway</button>
         </section>
-      ) : <Budgets engine={engine} data={data} scopeKind={kind} range={range} isCurrent={isCurrent} today={today} onShowHistory={() => setView('history')} />)}
+      ) : (
+        <>
+          <Budgets engine={engine} data={data} scopeKind={kind} range={range} isCurrent={isCurrent} today={today} onShowHistory={() => setView('history')} />
+          <ComingPeriods engine={engine} data={data} today={today} onJump={(iso) => { if (kind !== 'period') setKind('period'); setAnchor(iso); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
+        </>
+      ))}
 
       {view === 'history' && (
         <div className="stack">
@@ -163,6 +170,48 @@ function Budgets({ engine, data, scopeKind, range: r, isCurrent: cur, today: t, 
       </>
     );
   }
+
+/** The old app's "Pocket leftover": spending money and what's free after budgets, pay period by pay period. */
+function ComingPeriods({ engine, data, today, onJump }: { engine: PlanEngine; data: AppData; today: IsoDate; onJump: (iso: IsoDate) => void }) {
+  const rows = useMemo(() => {
+    const out: Array<{ start: number; end: number; spending: number; free: number; spent: number; names: string[]; now: boolean }> = [];
+    let p = periodForDate(engine, today);
+    for (let i = 0; i < 5; i++) {
+      const info = p.startsOnPayday ? paydayInfo(engine, p.startMs) : null;
+      const snap = snapshotForRange(engine, p.startMs, p.endMs);
+      const misc = snap.items.find((r) => r.id === MISC_ID);
+      const ids = new Set<string>();
+      for (const list of occurrencesForRange(p.startMs, p.endMs, data.extras, data.settings).values()) for (const o of list) ids.add(o.id);
+      const names = data.order.extras.filter((id) => ids.has(id)).map((id) => data.extras.find((x) => x.id === id)?.name || '').filter(Boolean);
+      out.push({
+        start: p.startMs, end: p.endMs, now: i === 0, spent: snap.totals.spent, names,
+        spending: info ? info.spending : snap.totals.budget,
+        free: info ? info.free : misc ? misc.budget : 0,
+      });
+      p = nextPeriod(engine, p);
+    }
+    return out;
+  }, [engine, data, today]);
+  if (!rows.length) return null;
+  const short = rows.filter((r) => r.free < -0.004);
+  return (
+    <section className="card flush">
+      <div className="card-head pad"><span className="lbl">Coming pay periods</span><span className="sub">Free after budgets</span></div>
+      <div className="list">
+        {rows.map((r) => (
+          <button key={r.start} type="button" className={`row no-lead ${r.free < -0.004 ? 'is-low' : ''}`} onClick={() => onJump(isoDate(r.start))}>
+            <span className="main-col">
+              <span className="title">{fmtRange(r.start, r.end)}{r.now && <Chip tone="good">Now</Chip>}</span>
+              <span className="sub">{fmtMoney(r.spending)} spending money{r.names.length ? ` · ${r.names.join(', ')}` : ''}{r.spent > 0 ? ` · ${fmtMoney(r.spent)} spent` : ''}</span>
+            </span>
+            <span className="trail"><Amount value={r.free} tone={r.free < -0.004 ? 'bad' : undefined} /><span className="sub">{r.free < -0.004 ? 'short' : 'free'}</span></span>
+          </button>
+        ))}
+      </div>
+      {short.length > 0 && <p className="sub pad">{short.length === 1 ? 'One pay period has' : `${short.length} pay periods have`} budgets adding up to more than the spending money (as much as {fmtMoney(-Math.min(...short.map((r) => r.free)))} more). Lower a budget for those weeks or move money between budgets.</p>}
+    </section>
+  );
+}
 
 function History({ engine, query: q }: { engine: PlanEngine; query: string }) {
     const groups = useMemo(() => historyGroups(engine, q), [engine, q]);
