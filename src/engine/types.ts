@@ -73,6 +73,10 @@ export interface DebtPayment {
   interestDays?: number | null;
   /** Applied automatically on the due date (the app assumed the scheduled payment was made). */
   auto?: boolean;
+  /** A payment you logged instead of the scheduled one due on this date. */
+  replacesDue?: IsoDate;
+  /** Logged as an extra payment on top of the plan. */
+  extra?: boolean;
 }
 
 export interface Debt {
@@ -94,6 +98,8 @@ export interface Debt {
   autoPay: boolean;
   /** Due dates up to and including this date have already been considered for auto-pay. */
   autoPaidThrough: IsoDate;
+  /** When you last confirmed the balance yourself (e.g. typed it in from your lender). */
+  balanceAsOf?: IsoDate;
 }
 
 export const MISC_ID = '__misc__';

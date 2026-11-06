@@ -96,7 +96,7 @@ button.legend-row:hover span:nth-child(2) { text-decoration: underline; text-dec
     background: var(--bg); border-bottom: 1px solid var(--line);
     font-size: 10.5px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--muted);
   }
-  .main.has-banner .tl-table-head { top: 52px; }
+  .main.has-banner .tl-table-head { top: var(--banner-h, 52px); }
 }
 
 /* ---------- Sheets & quick add ---------- */

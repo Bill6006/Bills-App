@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { navigate, useRoute } from './router';
 import { Sidebar, TabBar } from './Shell';
 import { ToastHost } from '../ui/components/ToastHost';
@@ -9,7 +9,7 @@ import { Home } from '../ui/screens/Home';
 import { Timeline } from '../ui/screens/Timeline';
 import { Welcome } from '../ui/screens/Welcome';
 import { Spending } from '../ui/screens/Spending';
-import { Plan } from '../ui/screens/Plan';
+import { Plan } from '../ui/screens/plan/PlanHub';
 import { openQuickAdd } from '../ui/sheets/QuickAdd';
 import type { ThemePref } from '../engine/types';
 
@@ -19,6 +19,22 @@ function applyTheme(theme: ThemePref) {
   else root.setAttribute('data-theme', theme);
   const bg = getComputedStyle(root).getPropertyValue('--bg').trim();
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', bg || '#0B1310');
+}
+
+/** Keeps --banner-h equal to the fixed banner's height so the page never slides under it. */
+function useBannerHeight(kind: string | null) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const root = document.documentElement;
+    if (!kind || !el) { root.style.removeProperty('--banner-h'); return; }
+    const set = () => root.style.setProperty('--banner-h', `${Math.ceil(el.getBoundingClientRect().height)}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [kind]);
+  return ref;
 }
 
 function useTheme(theme: ThemePref) {
@@ -40,6 +56,8 @@ export function App() {
   const route = useRoute();
   useTheme(data.prefs.theme);
   useEffect(() => { void hydrate(); }, []);
+  const banner = !hydrated ? null : whatIf ? 'whatif' : realData.meta.sample ? 'sample' : null;
+  const bannerRef = useBannerHeight(banner);
 
   if (!hydrated) {
     return <div className="splash" aria-label="Loading"><span className="brand-mark big">B</span></div>;
@@ -54,18 +72,17 @@ export function App() {
     default: screen = empty ? <Welcome /> : <Home />;
   }
 
-  const banner = whatIf ? 'whatif' : realData.meta.sample ? 'sample' : null;
   return (
     <div className="shell">
       {banner === 'whatif' && (
-        <div className="banner whatif" role="status">
+        <div className="banner whatif" role="status" ref={bannerRef}>
           <div className="grow"><div>What-if mode</div><div className="sub">Changes here aren't saved until you keep them.</div></div>
           <button type="button" className="btn sm ghost" onClick={discardWhatIf}>Discard</button>
           <button type="button" className="btn sm" onClick={keepWhatIf}>Keep</button>
         </div>
       )}
       {banner === 'sample' && (
-        <div className="banner sample" role="status">
+        <div className="banner sample" role="status" ref={bannerRef}>
           <div className="grow"><div>Sample data</div><div className="sub">Made-up numbers to look around with.</div></div>
           <button type="button" className="btn sm ghost" onClick={() => { replaceAll(makeDefaultData(today), 'Sample data cleared.'); navigate('/'); }}>Clear</button>
         </div>

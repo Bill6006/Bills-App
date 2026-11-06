@@ -4,9 +4,9 @@
  * Step 2 recovers the real data when the file was exported in projected mode.
  * Step 3 normalizes items the way v117 does at render time, then maps everything into AppData.
  */
-import { isMonthKey, isValidIso, normalizeISODateLoose, type IsoDate } from '../engine/dates';
+import { DAY_MS, isoDate, isMonthKey, isValidIso, normalizeISODateLoose, parseISOToMs, type IsoDate } from '../engine/dates';
 import { clampInt, clampPct, num, round2 } from '../engine/money';
-import { recalcFromPayments } from '../engine/loans';
+import { nextDueIsoAfter, prevDueIso, recalcFromPayments } from '../engine/loans';
 import {
   MISC_ID, MISC_NAME,
   type AppData, type BillsSort, type Debt, type DebtPayment, type DebtStrategy, type PaySchedule, type RecurringItem,
@@ -193,8 +193,19 @@ function toDebt(x: Obj, idx: number, today: IsoDate): Debt {
     interestStartDate: normalizeISODateLoose(x.interestStartDate || '') || '',
     payments,
     autoPay: true,
-    autoPaidThrough: today,
+    // Yesterday, so a payment due today is still applied automatically (unless you logged it in v117).
+    autoPaidThrough: isoDate(parseISOToMs(today) - DAY_MS),
   };
+}
+
+/** A payment logged in v117 during the current cycle stands in for that cycle's due date, so it isn't applied twice. */
+function markCurrentCycle(d: Debt, today: IsoDate): Debt {
+  const due = nextDueIsoAfter(isoDate(parseISOToMs(today) - DAY_MS), d.dueDay, today);
+  const prev = prevDueIso(due, d.dueDay);
+  const inCycle = d.payments.filter((p) => !p.auto && !p.replacesDue && p.date > prev && p.date <= today);
+  if (!inCycle.length) return d;
+  const main = inCycle.reduce((a, b) => (b.amount > a.amount ? b : a));
+  return { ...d, payments: d.payments.map((p) => (p.id === main.id ? { ...p, replacesDue: due } : p)) };
 }
 
 function normalizeOrder(saved: unknown, ids: string[]): string[] {
@@ -319,6 +330,8 @@ export function importV117(raw: unknown, today: IsoDate, opts: { fileName?: stri
       return needsSplit ? recalcFromPayments(d, today) : d;
     });
   }
+
+  data.debts = data.debts.map((d) => markCurrentCycle(d, today));
 
   data.order = {
     bills: normalizeOrder(ui.billCustomOrder, data.bills.map((b) => b.id)),

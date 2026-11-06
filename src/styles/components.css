@@ -346,7 +346,7 @@ button.row:active { background: var(--surface-2); }
 .toast {
   pointer-events: auto;
   display: flex; align-items: center; gap: 12px;
-  max-width: 520px; width: max-content;
+  max-width: min(520px, 100%); width: max-content;
   padding: 11px 12px 11px 16px; border-radius: 16px;
   background: var(--text); color: var(--bg);
   font-weight: 750; font-size: 13.5px;

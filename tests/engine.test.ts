@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { catchUpAutoPay, debtBillsForMonth, payoffCalc, payoffSchedule } from '../src/engine/loans';
+import { applyMissedPayments, catchUpAutoPay, debtBillsForMonth, deletePayment, editPayment, logPayment, missedDueDates, payoffCalc, payoffSchedule, previewPayment, setBalance } from '../src/engine/loans';
 import { PlanEngine } from '../src/engine/plan';
 import { describeRule } from '../src/engine/schedule';
 import { ALL_FIXES, NO_FIXES, type Debt } from '../src/engine/types';
@@ -19,7 +19,7 @@ const card: Debt = {
 
 describe('loans', () => {
   it('payoffSchedule agrees with v117 payoffCalc', () => {
-    for (const d of [card, { ...card, interestStartDate: '2026-06-01' as const }, { ...card, apr: 0 }]) {
+    for (const d of [card, { ...card, interestStartDate: '2026-10-26' as const }, { ...card, apr: 0 }]) {
       const calc = payoffCalc(d, '2026-11-06');
       const sched = payoffSchedule(d, '2026-11-06');
       expect(sched.payments.length).toBe(calc.months);
@@ -54,11 +54,12 @@ describe('loans', () => {
     expect(catchUpAutoPay(debt, '2026-11-06').applied).toHaveLength(0);
   });
 
-  it('skips the automatic payment when you logged one yourself in that cycle', () => {
+  it('skips the automatic payment only when a logged payment replaces it', () => {
     const manual = { id: 'm1', date: '2026-10-20', amount: 200, principal: 152.1, interest: 47.9, balanceBefore: 2300, balanceAfter: 2147.9, note: '', createdAt: '' };
-    const d = { ...card, balance: 2147.9, autoPaidThrough: '2026-10-01', payments: [manual] };
-    const { applied } = catchUpAutoPay(d, '2026-11-06');
-    expect(applied).toHaveLength(0);
+    const replacing = { ...card, balance: 2147.9, autoPaidThrough: '2026-10-01', payments: [{ ...manual, replacesDue: '2026-10-25' }] };
+    expect(catchUpAutoPay(replacing, '2026-11-06').applied).toHaveLength(0);
+    const extra = { ...card, balance: 2147.9, autoPaidThrough: '2026-10-01', payments: [manual] };
+    expect(catchUpAutoPay(extra, '2026-11-06').applied.map((p) => p.date)).toEqual(['2026-10-25']);
   });
 
   it('does nothing when automatic payments are off', () => {
@@ -66,6 +67,75 @@ describe('loans', () => {
     expect(applied).toHaveLength(0);
     expect(debt.balance).toBe(2300);
     expect(debt.autoPaidThrough).toBe('2026-11-06');
+  });
+});
+
+describe('loan payments', () => {
+  const today = '2026-11-06';
+  // Daily-interest loan whose last logged payment was months ago (like a v117 file that wasn't kept up).
+  const stale: Debt = {
+    id: 'car', name: 'Car', balance: 20000, originalBalance: 24000, apr: 6, minPayment: 500, extraPayment: 0, dueDay: 25, priority: 1,
+    interestStartDate: '2026-01-10', autoPay: true, autoPaidThrough: '2026-11-05',
+    payments: [{ id: 'p1', date: '2026-08-31', amount: 500, principal: 400, interest: 100, balanceBefore: 20400, balanceAfter: 20000, note: '', createdAt: '' }],
+  };
+
+  it('never schedules a payment in the past; the first one carries the interest since the last payment', () => {
+    const s = payoffSchedule(stale, today);
+    expect(s.payments[0].dueIso).toBe('2026-11-25');
+    expect(s.payments[0].interest).toBe(round2(20000 * 0.06 / 365 * 86));
+  });
+
+  it('finds due dates nothing covers and can record them as paid', () => {
+    expect(missedDueDates(stale, today)).toEqual(['2026-09-25', '2026-10-25']);
+    const { debt, applied } = applyMissedPayments(stale, today, 'now');
+    expect(applied.map((p) => p.date)).toEqual(['2026-09-25', '2026-10-25']);
+    expect(applied[0].interest).toBe(round2(20000 * 0.06 / 365 * 25));
+    expect(debt.balance).toBe(applied[1].balanceAfter);
+    expect(missedDueDates(debt, today)).toEqual([]);
+    expect(payoffSchedule(debt, today).payments[0].dueIso).toBe('2026-11-25');
+  });
+
+  it('typing the balance confirms it, keeps it through later payments, and clears the missed-payment check', () => {
+    const typed = setBalance(stale, 19050.25, today);
+    expect(missedDueDates(typed, today)).toEqual([]);
+    const after = logPayment(typed, { amount: 300, date: today, note: 'extra' }, today, 'now');
+    const p = after.payments.at(-1)!;
+    expect(p.balanceBefore).toBe(19050.25);
+    expect(after.balance).toBe(round2(19050.25 - p.principal));
+    expect(p.replacesDue).toBeUndefined();
+  });
+
+  it('a payment logged in place of an automatic one replaces it', () => {
+    const paid = catchUpAutoPay({ ...card, autoPaidThrough: '2026-10-20' }, today, 'now').debt;
+    const auto = paid.payments.find((p) => p.auto)!;
+    expect(auto.date).toBe('2026-10-25');
+    const { replaced, split } = previewPayment(paid, { amount: 200, date: '2026-10-27', note: '', replacesDue: '2026-10-25' }, today);
+    expect(replaced?.id).toBe(auto.id);
+    expect(split.balanceBefore).toBe(2300);
+    const next = logPayment(paid, { amount: 200, date: '2026-10-27', note: '', replacesDue: '2026-10-25' }, today, 'now');
+    expect(next.payments.some((p) => p.auto)).toBe(false);
+    expect(next.balance).toBe(round2(2300 - split.principal));
+  });
+
+  it('editing or deleting a payment moves the balance by that payment only', () => {
+    const one = logPayment(card, { amount: 400, date: '2026-11-02', note: '', replacesDue: undefined }, today, 'now');
+    const id = one.payments[0].id;
+    const edited = editPayment(one, id, { amount: 300, date: '2026-11-02', note: 'fixed' }, today);
+    expect(edited.payments[0].amount).toBe(300);
+    expect(edited.balance).toBe(round2(2300 - edited.payments[0].principal));
+    expect(deletePayment(edited, id).balance).toBe(2300);
+  });
+
+  it('plans this month with the payment actually made, and keeps it after the loan is paid off', () => {
+    const almost: Debt = { ...card, balance: 100, apr: 0, autoPaidThrough: '2026-11-20', payments: [] };
+    const before = debtBillsForMonth('2026-11', [almost], '2026-11-20', ALL_FIXES);
+    expect(before[0].amount).toBe(100);
+    const paidOff = catchUpAutoPay(almost, '2026-11-25', 'now').debt;
+    expect(paidOff.balance).toBe(0);
+    const after = debtBillsForMonth('2026-11', [paidOff], '2026-11-25', ALL_FIXES);
+    expect(after).toHaveLength(1);
+    expect(after[0].amount).toBe(100);
+    expect(debtBillsForMonth('2026-12', [paidOff], '2026-11-25', ALL_FIXES)).toHaveLength(0);
   });
 });
 
@@ -106,12 +176,12 @@ describe('import', () => {
     expect(report.notes.join(' ')).toMatch(/projected/);
   });
 
-  it('keeps orders, maps neon/aurora themes to dark, and starts auto-pay today', () => {
+  it('keeps orders, maps neon/aurora themes to dark, and starts auto-pay from today', () => {
     const { data } = importV117(fixture('two-incomes'), '2026-11-06');
     expect(data.order.bills.slice(0, 3)).toEqual(['b3', 'b1', 'b2']);
     expect(data.prefs.theme).toBe('light');
     expect(importV117(fixture('tight-monthly'), '2026-11-06').data.prefs.theme).toBe('dark');
-    expect(data.debts.every((d) => d.autoPay && d.autoPaidThrough === '2026-11-06')).toBe(true);
+    expect(data.debts.every((d) => d.autoPay && d.autoPaidThrough === '2026-11-05')).toBe(true);
   });
 
   it('rejects files that are not v117 exports', () => {

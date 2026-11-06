@@ -28,10 +28,10 @@ export function Field({ label, hint, children }: { label: string; hint?: ReactNo
 
 /** Money input that accepts "$1,234.50"; reports NaN while empty or invalid. */
 export function MoneyInput({ id, value, onChange, placeholder = '0.00', autoFocus, allowNegative }: { id?: string; value: number | null; onChange: (v: number) => void; placeholder?: string; autoFocus?: boolean; allowNegative?: boolean }) {
-  const [text, setText] = useState(value == null || !Number.isFinite(value) ? '' : String(round2(value)));
+  const [text, setText] = useState(value == null || !Number.isFinite(value) ? '' : round2(value).toFixed(2));
   useEffect(() => {
     const parsed = parseMoneyInput(text);
-    if (value != null && Number.isFinite(value) && (!Number.isFinite(parsed) || Math.abs(parsed - value) > 0.001)) setText(String(round2(value)));
+    if (value != null && Number.isFinite(value) && (!Number.isFinite(parsed) || Math.abs(parsed - value) > 0.001)) setText(round2(value).toFixed(2));
     // Only react to outside changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
@@ -70,6 +70,10 @@ export function NumberInput({ id, value, onChange, min, max }: { id?: string; va
 
 export function DateInput({ id, value, onChange, min, max }: { id?: string; value: string; onChange: (v: string) => void; min?: string; max?: string }) {
   return <input id={id} className="input" type="date" value={value} min={min} max={max} onChange={(e) => e.target.value && onChange(e.target.value)} />;
+}
+
+export function MonthInput({ id, value, onChange }: { id?: string; value: string; onChange: (v: string) => void }) {
+  return <input id={id} className="input" type="month" value={value} onChange={(e) => /^\d{4}-\d{2}$/.test(e.target.value) && onChange(e.target.value)} />;
 }
 
 export function Select<T extends string | number>({ id, value, options, onChange }: { id?: string; value: T; options: Array<{ value: T; label: string }>; onChange: (v: T) => void }) {

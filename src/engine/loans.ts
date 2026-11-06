@@ -98,31 +98,61 @@ export function payoffCalc(d: Debt, today: IsoDate): PayoffCalc {
 export interface ScheduledPayment { dueIso: IsoDate; amount: number; interest: number; principal: number; balanceAfter: number }
 export interface PayoffSchedule extends PayoffCalc { payments: ScheduledPayment[]; finalDueIso: IsoDate | '' }
 
+/** The latest due date already taken care of: an automatic payment, or one you logged in its place. */
+export function coveredThrough(d: Pick<Debt, 'payments'>): IsoDate | '' {
+  let max = '';
+  for (const p of d.payments || []) {
+    const c = p.auto ? p.date : p.replacesDue || '';
+    if (c && c > max) max = c;
+  }
+  return max;
+}
+
+/** Due date that falls in a month (short months use their last day). */
+export function dueIsoInMonth(mk: MonthKey, dueDay: number): IsoDate {
+  const [y, m] = mk.split('-').map(Number);
+  return isoDate(msUTC(y, m, Math.min(clampInt(dueDay || 1, 1, 31), daysInMonth(y, m))));
+}
+
+/** First due date that still needs paying: after the last payment or covered due date, and never before today. */
+export function nextUnpaidDue(d: Debt, today: IsoDate): IsoDate {
+  const done = [lastPaymentDate(d), coveredThrough(d)].reduce((a, b) => (b > a ? b : a), '');
+  if (done && done >= today) return nextDueIsoAfter(done, d.dueDay || 1, today);
+  return nextDueIsoAfter(isoDate(parseISOToMs(today) - DAY_MS), d.dueDay || 1, today);
+}
+
 /**
- * The same projection as payoffCalc, with a due date and amount for every remaining payment.
- * Monthly-interest loans start from the first due date after today (or after the last payment).
+ * Every remaining payment with its due date and split, starting at the next unpaid due date.
+ * Same math as payoffCalc; daily interest counts from the last payment you made.
  */
 export function payoffSchedule(d: Debt, today: IsoDate): PayoffSchedule {
   const base = payoffCalc(d, today);
   const out: PayoffSchedule = { ...base, payments: [], finalDueIso: '' };
-  if (base.months === 0 || !Number.isFinite(base.months)) return out;
-  const apr = Math.max(0, Number(d.apr || 0));
   const payment = base.payment;
+  let bal = Math.max(0, round2(Number(d.balance || 0)));
+  if (bal <= 0 || payment <= 0) return out;
+  const apr = Math.max(0, Number(d.apr || 0));
   const daily = !!normalizeISODateLoose(d.interestStartDate || '');
-  let bal = Math.max(0, Number(d.balance || 0));
-  const last = lastPaymentDate(d);
-  let fromIso = daily ? (normalizeISODateLoose(last || d.interestStartDate) || today) : (last && last > today ? last : today);
+  let interestFrom = daily ? (normalizeISODateLoose(lastPaymentDate(d) || d.interestStartDate) || today) : '';
+  let dueIso = nextUnpaidDue(d, today);
+  let interest = 0;
   for (let i = 0; i < 600 && bal > 0.009; i++) {
-    const dueIso = nextDueIsoAfter(fromIso, d.dueDay || 1, today);
-    const int = daily
-      ? round2(bal * (apr / 100) / 365 * (dailyInterestDays(fromIso, dueIso) ?? 30))
-      : round2(bal * (apr / 100 / 12));
+    const days = daily ? dailyInterestDays(interestFrom, dueIso) ?? 30 : 30;
+    const int = daily ? round2(bal * (apr / 100) / 365 * days) : round2(bal * (apr / 100 / 12));
+    // A long gap since the last payment can make one payment interest-heavy; that alone isn't "stuck".
+    if (payment <= int && bal > payment && (i > 0 || days <= 31)) return { ...out, months: Infinity, interest: round2(interest + int), stuck: true, payments: [] };
     const pay = round2(Math.min(payment, bal + int));
     const principal = round2(pay - int);
+    interest = round2(interest + int);
     bal = round2(Math.max(0, bal + int - payment));
     out.payments.push({ dueIso, amount: pay, interest: int, principal, balanceAfter: bal });
-    fromIso = dueIso;
+    interestFrom = dueIso;
+    dueIso = nextDueIsoAfter(dueIso, d.dueDay || 1, today);
   }
+  if (bal > 0.009) return { ...out, months: Infinity, interest, stuck: true, payments: [] };
+  out.months = out.payments.length;
+  out.interest = interest;
+  out.stuck = false;
   out.finalDueIso = out.payments.length ? out.payments[out.payments.length - 1].dueIso : '';
   return out;
 }
@@ -260,13 +290,27 @@ export function scheduledAmount(d: Debt): number {
 /**
  * Loan payments as monthly bills on the due day, paid from the Bills account.
  * v117 (no fix): every month while the balance is above zero.
- * Fixed: after the payoff month nothing is scheduled, and the final payment is only what's owed.
+ * Fixed: this month and earlier show the payment that was actually made for that due date (automatic, or one
+ * you logged in its place); later months follow the payoff schedule, which stops after the final payment
+ * and caps it at what's owed.
  */
 export function debtBillsForMonth(monthKey: MonthKey, debts: Debt[], today: IsoDate, fixes: Fixes, scheduleCache?: Map<string, PayoffSchedule>): RecurringItem[] {
   const out: Array<RecurringItem & { _debtId: string }> = [];
   for (const d of debts || []) {
     if (!d || typeof d !== 'object') continue;
     const full = scheduledAmount(d);
+    const nm = String(d.name || 'Loan').trim() || 'Loan';
+    const id = `debt-${d.id || nm}`;
+    const dueRule = { type: 'monthly_dom' as const, dom: clampInt(Number(d.dueDay || 1), 1, 31) };
+    if (fixes.loanPayoffStop && monthKey <= today.slice(0, 7)) {
+      const due = dueIsoInMonth(monthKey, d.dueDay);
+      const cover = (d.payments || []).find((p) => (p.auto ? p.date === due : p.replacesDue === due));
+      if (cover) {
+        const rule = cover.date.slice(0, 7) === monthKey ? { type: 'one_time' as const, anchor: cover.date } : dueRule;
+        out.push({ id, name: nm, amount: round2(cover.amount), rule, _debtId: d.id });
+        continue;
+      }
+    }
     if (full <= 0 || Number(d.balance || 0) <= 0) continue;
     let amount = full;
     if (fixes.loanPayoffStop) {
@@ -279,8 +323,7 @@ export function debtBillsForMonth(monthKey: MonthKey, debts: Debt[], today: IsoD
         if (k >= 0) amount = sched.payments[k].amount;
       }
     }
-    const nm = String(d.name || 'Loan').trim() || 'Loan';
-    out.push({ id: `debt-${d.id || nm}`, name: nm, amount, rule: { type: 'monthly_dom', dom: clampInt(Number(d.dueDay || 1), 1, 31) }, _debtId: d.id });
+    out.push({ id, name: nm, amount, rule: dueRule, _debtId: d.id });
   }
   return out;
 }
@@ -299,21 +342,13 @@ export function newId(prefix: string): string {
   return `${prefix}${Date.now().toString(36)}${idSeq.toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
 
-/**
- * Applies the scheduled payment on every due date since the loan was last checked, unless a
- * payment you logged yourself already covers that cycle. Returns a new Debt and the payments added.
- */
-export function catchUpAutoPay(d: Debt, today: IsoDate, nowIso: string = new Date().toISOString()): { debt: Debt; applied: DebtPayment[] } {
-  const through = normalizeISODateLoose(d.autoPaidThrough) || today;
-  if (through >= today) return { debt: d.autoPaidThrough === today ? d : { ...d, autoPaidThrough: today }, applied: [] };
-  if (!d.autoPay || Number(d.balance || 0) <= 0 || scheduledAmount(d) <= 0) return { debt: { ...d, autoPaidThrough: today }, applied: [] };
+function applyScheduled(d: Debt, fromIso: IsoDate, throughIso: IsoDate, today: IsoDate, nowIso: string): { payments: DebtPayment[]; applied: DebtPayment[]; balance: number } {
   const payments = [...d.payments];
   const applied: DebtPayment[] = [];
   let bal = round2(Number(d.balance || 0));
-  let due = nextDueIsoAfter(through, d.dueDay, today);
-  for (let guard = 0; guard < 120 && due <= today && bal > 0.009; guard++) {
-    const prev = prevDueIso(due, d.dueDay);
-    const covered = payments.some((p) => !p.auto && p.date > prev && p.date <= due);
+  let due = nextDueIsoAfter(fromIso, d.dueDay, today);
+  for (let guard = 0; guard < 120 && due <= throughIso && bal > 0.009; guard++) {
+    const covered = payments.some((p) => (p.auto ? p.date === due : p.replacesDue === due));
     if (!covered) {
       const interestFrom = lastPaymentDate({ payments }) || d.interestStartDate || '';
       const split = paymentSplit(d, scheduledAmount(d), bal, due, interestFrom, today);
@@ -330,5 +365,128 @@ export function catchUpAutoPay(d: Debt, today: IsoDate, nowIso: string = new Dat
     }
     due = nextDueIsoAfter(due, d.dueDay, today);
   }
-  return { debt: { ...d, payments, balance: round2(bal), autoPaidThrough: today }, applied };
+  return { payments, applied, balance: round2(bal) };
+}
+
+/**
+ * Applies the scheduled payment on every due date since the loan was last checked, unless you logged a
+ * payment in its place. Returns a new Debt and the payments added.
+ */
+export function catchUpAutoPay(d: Debt, today: IsoDate, nowIso: string = new Date().toISOString()): { debt: Debt; applied: DebtPayment[] } {
+  const through = normalizeISODateLoose(d.autoPaidThrough) || today;
+  if (through >= today) return { debt: d.autoPaidThrough === today ? d : { ...d, autoPaidThrough: today }, applied: [] };
+  if (!d.autoPay || Number(d.balance || 0) <= 0 || scheduledAmount(d) <= 0) return { debt: { ...d, autoPaidThrough: today }, applied: [] };
+  const r = applyScheduled(d, through, today, today, nowIso);
+  return { debt: { ...d, payments: r.payments, balance: r.balance, originalBalance: Math.max(d.originalBalance, d.balance), autoPaidThrough: today }, applied: r.applied };
+}
+
+/**
+ * Due dates between your last logged payment and the day automatic payments started that nothing covers,
+ * e.g. after importing a loan whose last logged payment was months ago. Empty once you confirm the balance.
+ */
+export function missedDueDates(d: Debt, today: IsoDate): IsoDate[] {
+  if (Number(d.balance || 0) <= 0 || scheduledAmount(d) <= 0) return [];
+  const last = lastPaymentDate(d);
+  if (!last) return [];
+  const from = [last, coveredThrough(d), d.balanceAsOf || ''].reduce((a, b) => (b > a ? b : a), '');
+  const until = [d.autoPaidThrough || today, today].reduce((a, b) => (b < a ? b : a));
+  const out: IsoDate[] = [];
+  let due = nextDueIsoAfter(from, d.dueDay, today);
+  for (let guard = 0; guard < 36 && due <= until; guard++) {
+    if (!(d.payments || []).some((p) => (p.auto ? p.date === due : p.replacesDue === due))) out.push(due);
+    due = nextDueIsoAfter(due, d.dueDay, today);
+  }
+  // Only the dates the automatic payments won't reach (they start after autoPaidThrough).
+  return out.filter((x) => x <= until);
+}
+
+/** Records the missed scheduled payments as if they were made on their due dates. */
+export function applyMissedPayments(d: Debt, today: IsoDate, nowIso: string = new Date().toISOString()): { debt: Debt; applied: DebtPayment[] } {
+  const missed = missedDueDates(d, today);
+  if (!missed.length) return { debt: d, applied: [] };
+  const from = isoDate(parseISOToMs(missed[0]) - DAY_MS);
+  const r = applyScheduled(d, from, missed[missed.length - 1], today, nowIso);
+  return { debt: { ...d, payments: r.payments, balance: r.balance }, applied: r.applied };
+}
+
+// ---------- editing payments (each change adjusts the balance by its own principal, so a balance you typed in stays) ----------
+
+function interestFromBefore(d: Debt, dateIso: IsoDate, excludeId?: string): string {
+  const before = (d.payments || []).filter((p) => p.id !== excludeId && p.amount > 0 && p.date <= dateIso).sort(paymentSortAsc);
+  return before.length ? before[before.length - 1].date : d.interestStartDate || '';
+}
+
+export interface PaymentDraft { amount: number; date: IsoDate; note: string; replacesDue?: IsoDate }
+
+/** The split a new payment would get, plus the automatic payment it would replace. */
+export function previewPayment(d: Debt, draft: PaymentDraft, today: IsoDate): { split: PaymentSplit; replaced: DebtPayment | null } {
+  const replaced = draft.replacesDue ? (d.payments || []).find((p) => p.auto && p.date === draft.replacesDue) ?? null : null;
+  const balance = round2(Number(d.balance || 0) + (replaced ? paymentPrincipal(replaced) : 0));
+  const tmp = replaced ? { ...d, payments: d.payments.filter((p) => p.id !== replaced.id) } : d;
+  const split = paymentSplit(tmp, draft.amount, balance, draft.date, interestFromBefore(tmp, draft.date), today);
+  return { split, replaced };
+}
+
+export function logPayment(d: Debt, draft: PaymentDraft, today: IsoDate, nowIso: string = new Date().toISOString()): Debt {
+  const { split, replaced } = previewPayment(d, draft, today);
+  if (split.amount <= 0) return d;
+  const payments = d.payments.filter((p) => !replaced || p.id !== replaced.id);
+  payments.push({
+    id: newId('p'), date: draft.date, amount: split.amount, principal: split.principal, interest: split.interest,
+    balanceBefore: split.balanceBefore, balanceAfter: split.balanceAfter, note: draft.note.trim(), createdAt: nowIso,
+    interestDays: split.interestDays ?? null, ...(draft.replacesDue ? { replacesDue: draft.replacesDue } : { extra: true }),
+  });
+  return { ...d, payments, balance: split.balanceAfter, originalBalance: Math.max(Number(d.originalBalance || 0), split.balanceBefore) };
+}
+
+export function editPayment(d: Debt, id: string, patch: { amount: number; date: IsoDate; note: string }, today: IsoDate): Debt {
+  const p = d.payments.find((x) => x.id === id);
+  if (!p) return d;
+  const before = round2(p.balanceBefore > 0 ? p.balanceBefore : Number(d.balance || 0) + paymentPrincipal(p));
+  const split = paymentSplit(d, patch.amount, before, patch.date, interestFromBefore(d, patch.date, id), today);
+  if (split.amount <= 0) return d;
+  const delta = round2(paymentPrincipal(p) - split.principal);
+  const next: DebtPayment = {
+    ...p, date: patch.date, note: patch.note.trim(), amount: split.amount, principal: split.principal, interest: split.interest,
+    balanceBefore: split.balanceBefore, balanceAfter: split.balanceAfter, interestDays: split.interestDays ?? null,
+  };
+  const balance = round2(Math.max(0, Number(d.balance || 0) + delta));
+  return { ...d, payments: d.payments.map((x) => (x.id === id ? next : x)), balance, originalBalance: Math.max(Number(d.originalBalance || 0), balance) };
+}
+
+export function deletePayment(d: Debt, id: string): Debt {
+  const p = d.payments.find((x) => x.id === id);
+  if (!p) return d;
+  const balance = round2(Number(d.balance || 0) + paymentPrincipal(p));
+  return { ...d, payments: d.payments.filter((x) => x.id !== id), balance, originalBalance: Math.max(Number(d.originalBalance || 0), balance) };
+}
+
+/** Typing in the balance (v117 rule for the starting balance); also confirms it as of today. */
+export function setBalance(d: Debt, balance: number, today: IsoDate): Debt {
+  const v = Math.max(0, round2(balance));
+  const principalPaid = round2((d.payments || []).reduce((s, p) => s + paymentPrincipal(p), 0));
+  return { ...d, balance: v, originalBalance: Math.max(Number(d.originalBalance || 0), round2(v + principalPaid), v), balanceAsOf: today };
+}
+
+/** Schedule-based outlook used on screen (agrees with payoffCalc whenever the loan is up to date). */
+export interface LoanOutlook {
+  schedule: PayoffSchedule;
+  nextDue: IsoDate | '';
+  nextAmount: number;
+  monthsLeft: number;
+  interestLeft: number;
+  payoffMk: MonthKey | '' | null;
+}
+
+export function loanOutlook(d: Debt, today: IsoDate): LoanOutlook {
+  const schedule = payoffSchedule(d, today);
+  const first = schedule.payments[0];
+  return {
+    schedule,
+    nextDue: first ? first.dueIso : '',
+    nextAmount: first ? first.amount : 0,
+    monthsLeft: Number(d.balance || 0) <= 0 ? 0 : schedule.months,
+    interestLeft: Number.isFinite(schedule.months) ? schedule.interest : NaN,
+    payoffMk: Number(d.balance || 0) <= 0 ? '' : Number.isFinite(schedule.months) ? (schedule.finalDueIso ? schedule.finalDueIso.slice(0, 7) : '') : null,
+  };
 }

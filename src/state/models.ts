@@ -6,7 +6,7 @@ import {
   parseISOToMs, parseMonthKey, toDateObj, type IsoDate, type MonthKey,
 } from '../engine/dates';
 import { fmtMoney, round2 } from '../engine/money';
-import { debtSummary, payoffCalc, payoffMonth, type DebtSummary } from '../engine/loans';
+import { debtSummary, lastPaymentDate, missedDueDates, payoffMonth, payoffSchedule, type DebtSummary } from '../engine/loans';
 import type { MonthPlan, PlanEngine, PlanRow } from '../engine/plan';
 import { capForPayIndex, pocketBase, pocketMinimumInfo, savingsForPayIndex, type MinimumInfo } from '../engine/pocket';
 import { nextPeriod, periodForDate, snapshotForRange, type Period, type Snapshot } from '../engine/spending';
@@ -265,8 +265,13 @@ export function alertsFor(engine: PlanEngine): Alert[] {
     }
   }
   for (const d of engine.data.debts) {
-    if (d.balance > 0 && payoffCalc(d, today).stuck) {
+    if (d.balance > 0 && payoffSchedule(d, today).stuck) {
       out.push({ id: `stuck-${d.id}`, tone: 'warn', text: `The ${d.name} payment doesn't cover its interest, so the balance won't go down.`, action: { label: 'Open loan', to: `/plan/loans/${d.id}` } });
+    }
+    const missed = missedDueDates(d, today);
+    if (missed.length) {
+      const last = lastPaymentDate(d);
+      out.push({ id: `missed-${d.id}`, tone: 'info', text: `${d.name}: no payment is logged since ${last ? fmtShort(parseISOToMs(last)) : 'it was added'}. Check that its balance is right.`, action: { label: 'Check loan', to: `/plan/loans/${d.id}` } });
     }
   }
   const data = engine.data;

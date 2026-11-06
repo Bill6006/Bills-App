@@ -54,7 +54,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   padding-right: max(16px, var(--safe-r));
 }
 
-.main.has-banner { padding-top: calc(var(--safe-t) + 54px); }
+.main.has-banner { padding-top: calc(var(--safe-t) + var(--banner-h, 54px) + 8px); }
 
 .sidebar { display: none; }
 
@@ -115,7 +115,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
     max-width: none;
     padding: 28px 36px 56px;
   }
-  .main.has-banner { padding-top: 76px; }
+  .main.has-banner { padding-top: calc(var(--banner-h, 54px) + 22px); }
   .sidebar {
     display: flex;
     flex-direction: column;
