@@ -204,7 +204,9 @@ function SettingsPage() {
   const [persisted, setPersisted] = useState<boolean | null>(null);
   useEffect(() => { void navigator.storage?.persisted?.().then(setPersisted).catch(() => setPersisted(null)); }, []);
   const erase = async () => {
-    try { await saveTextFile(makeBackupText(useStore.getState().data), backupFileName(today)); } catch { /* the backup is a courtesy; erasing still has Undo */ }
+    let saved: Awaited<ReturnType<typeof saveTextFile>>;
+    try { saved = await saveTextFile(makeBackupText(useStore.getState().data), backupFileName(today)); } catch { saved = 'cancelled'; }
+    if (saved === 'cancelled') { toast('Nothing was erased. Save the backup to continue.'); return; }
     replaceAll(makeDefaultData(today), 'Everything was erased.');
     setConfirm('');
     navigate('/');

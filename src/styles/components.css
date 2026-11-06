@@ -311,6 +311,8 @@ button.row:active { background: var(--surface-2); }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 18px 10px; flex-shrink: 0; }
 .sheet-head h2 { font-size: 18px; font-weight: 800; letter-spacing: -.01em; }
 .sheet-body { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 4px 18px calc(18px + var(--safe-b)); display: flex; flex-direction: column; gap: 14px; overscroll-behavior: contain; }
+/* Let the body scroll instead of squeezing its children when they don't fit. */
+.sheet-body > *, .page > * { flex-shrink: 0; }
 .sheet-foot { padding: 10px 18px calc(14px + var(--safe-b)); border-top: 1px solid var(--line); display: flex; gap: 10px; flex-shrink: 0; background: var(--surface); }
 .sheet-foot .btn { flex: 1; }
 .sheet.closing { animation: sheet-down var(--dur-2) var(--ease-in-out) both; }

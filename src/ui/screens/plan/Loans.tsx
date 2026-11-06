@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { fmtDow, fmtMedium, fmtMonthLong, fmtShort, isValidIso, parseISOToMs, type IsoDate } from '../../../engine/dates';
 import { clampInt, fmtMoney, round2 } from '../../../engine/money';
 import {
-  applyMissedPayments, deletePayment, editPayment, interestPaidSoFar, lastPaymentDate, loanOutlook, logPayment,
+  applyMissedPayments, dailyInterestDays, deletePayment, editPayment, interestPaidSoFar, lastPaymentDate, loanOutlook, logPayment,
   missedDueDates, monthsLabel, newId, nextUnpaidDue, orderDebts, paidSoFar, paymentPrincipal, percentPaid, previewPayment,
   scheduledAmount, setBalance, type LoanOutlook,
 } from '../../../engine/loans';
@@ -187,6 +187,9 @@ function LoanDetail({ id }: { id: string }) {
               <dt>Balance after</dt><dd>{fmtMoney(o.schedule.payments[0].balanceAfter)}</dd>
             </div>
           ) : <p className="sub">{scheduledAmount(d) > 0 ? "The payment doesn't cover the interest, so the balance won't go down. Raise the payment to pay it off." : 'No payment is set for this loan.'}</p>}
+          {daily && o.nextDue && o.schedule.payments[0] && (
+            <p className="sub">Interest is {d.apr}% a year, counted by day: {dailyInterestDays(lastPaymentDate(d) || d.interestStartDate, o.nextDue)} days since {fmtShort(parseISOToMs((lastPaymentDate(d) || d.interestStartDate) as IsoDate))}.</p>
+          )}
           <div className="field-row">
             <div className="grow"><div className="t">Apply it automatically</div><div className="sub">{d.autoPay ? `On each due date the app assumes you paid ${fmtMoney(scheduledAmount(d))} and lowers the balance.` : "You'll log each payment yourself."}</div></div>
             <Switch checked={d.autoPay} label="Apply payments automatically" onChange={(v) => setDebt(d.id, (x) => ({ ...x, autoPay: v, autoPaidThrough: today }))} />
@@ -338,11 +341,14 @@ function LogPaymentSheet({ debtId, onClose }: { debtId: string; onClose: () => v
   const [amount, setAmount] = useState<number>(d ? scheduledAmount(d) : NaN);
   const [date, setDate] = useState<IsoDate>(today);
   const [note, setNote] = useState('');
-  const [kind, setKind] = useState<'extra' | 'instead'>('extra');
+  // With automatic payments off, what you log is usually the regular payment itself.
+  const [kind, setKind] = useState<'extra' | 'instead'>(d && !d.autoPay ? 'instead' : 'extra');
   // Which scheduled payment this one can stand in for: a recent automatic one, or the next one due.
   const recentAuto = d ? [...d.payments].filter((p) => p.auto && p.date <= today && (parseISOToMs(today) - parseISOToMs(p.date)) / 86400000 <= 45).sort((a, b) => b.date.localeCompare(a.date))[0] : undefined;
   const nextDue = d ? nextUnpaidDue(d, today) : today;
-  const options = [...(recentAuto ? [recentAuto.date] : []), ...(nextDue !== recentAuto?.date ? [nextDue] : [])];
+  const missed = d ? missedDueDates(d, today).slice(-2) : [];
+  // Oldest unpaid first (a late payment), then a recent automatic one, then the next one due.
+  const options = [...new Set([...missed, ...(recentAuto ? [recentAuto.date] : []), nextDue])];
   const [due, setDue] = useState<IsoDate>(options[0] || nextDue);
   if (!d) return <Sheet title="Log a payment" onClose={onClose}><p className="sub">This loan isn't here anymore.</p></Sheet>;
 
@@ -367,7 +373,7 @@ function LogPaymentSheet({ debtId, onClose }: { debtId: string; onClose: () => v
         <div className="chips" role="radiogroup" aria-label="Scheduled payment it replaces">
           {options.map((x) => (
             <button key={x} type="button" role="radio" aria-checked={due === x} className={`cp ${due === x ? 'on' : ''}`} onClick={() => setDue(x)}>
-              {x === recentAuto?.date ? `The ${fmtShort(parseISOToMs(x))} automatic payment` : `The one due ${fmtShort(parseISOToMs(x))}`}
+              {x === recentAuto?.date ? `The ${fmtShort(parseISOToMs(x))} automatic payment` : missed.includes(x) ? `The ${fmtShort(parseISOToMs(x))} one (not logged)` : `The one due ${fmtShort(parseISOToMs(x))}`}
             </button>
           ))}
         </div>

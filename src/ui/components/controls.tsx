@@ -44,7 +44,11 @@ export function MoneyInput({ id, value, onChange, placeholder = '0.00', autoFocu
           setText(t);
           onChange(parseMoneyInput(t));
         }}
-        onBlur={() => { const v = parseMoneyInput(text); if (Number.isFinite(v)) setText(v.toFixed(2)); }} />
+        onBlur={() => {
+          const v = parseMoneyInput(text);
+          if (Number.isFinite(v)) setText(v.toFixed(2));
+          else if (value != null && Number.isFinite(value)) setText(round2(value).toFixed(2));
+        }} />
     </div>
   );
 }

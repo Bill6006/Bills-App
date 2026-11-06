@@ -9,6 +9,7 @@ import { openSheet } from '../../../state/sheets';
 import { update, useActive, useStore } from '../../../state/store';
 import { useEngine } from '../../../state/useEngine';
 import { Sheet } from '../../components/Sheet';
+import { openWhy } from '../../sheets/WhySheet';
 import { Amount, Money, Note } from '../../components/bits';
 import { Field, MoneyInput, MonthInput, Segmented, TextInput } from '../../components/controls';
 import { IconPlus, IconTrash, IconTrend } from '../../icons';
@@ -78,11 +79,11 @@ export function SavingsPage({ sub }: { sub?: string }) {
     <div className="page page-narrow">
       <PlanHeader title="Savings" action={<button type="button" className="btn sm" onClick={() => openWithdrawal()}><IconPlus />Withdrawal</button>} />
 
-      <section className="card hero-lite">
+      <button type="button" className="card tap hero-lite" onClick={() => openWhy(engine, { kind: 'savingsToday' })} aria-label={`Savings should have ${fmtMoney(now)} today. Tap for details.`}>
         <span className="lbl">Savings should have today</span>
         <Money value={now} size="lg" />
         <span className="sub">{last ? `${fmtMoney(last.end)} by the end of ${fmtMonthLong(last.mk)}` : ''}</span>
-      </section>
+      </button>
 
       <section className="card">
         <div className="card-head"><span className="lbl">Next {horizon} months</span>
@@ -90,7 +91,7 @@ export function SavingsPage({ sub }: { sub?: string }) {
             options={[{ value: '6', label: '6 mo' }, { value: '12', label: '1 yr' }, { value: '24', label: '2 yr' }]} />
         </div>
         <SavingsChart points={points} />
-        <p className="sub">Month-end balance. Dots mark months with a planned withdrawal.</p>
+        <p className="sub">{points.some((p) => p.withdrawn > 0) ? 'Month-end balance. Dots mark months with a planned withdrawal.' : 'Month-end balance. No withdrawals are planned in this time.'}</p>
       </section>
 
       <section className="card">

@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
 import { fmtDow, fmtLong, fmtMonthShort, fmtShort, isoDate, parseISOToMs } from '../../engine/dates';
-import { fmtMoney } from '../../engine/money';
+import { fmtMoney, fmtSigned, round2 } from '../../engine/money';
 import { monthsLabel } from '../../engine/loans';
 import { navigate } from '../../app/router';
-import { useEngine } from '../../state/useEngine';
+import { useEngine, useRealEngine } from '../../state/useEngine';
 import { update, useActive } from '../../state/store';
 import { homeModel, type Entry, type PaydayInfo } from '../../state/models';
 import { Guilloche } from '../components/Guilloche';
@@ -21,6 +21,8 @@ export function Home() {
   const engine = useEngine();
   const data = useActive();
   const m = useMemo(() => homeModel(engine), [engine]);
+  const real = useRealEngine();
+  const realNow = real ? real.rowFor(m.todayMs)?.billsBalanceWorking ?? null : null;
   const todayIso = engine.today();
   const cushion = engine.settings.cushion;
   const cur = m.current;
@@ -49,6 +51,9 @@ export function Home() {
             <Money value={m.billsNow} size="hero" />
             {m.billsBeforeTodaysBills != null && (
               <span className="hero-sub">Before today's {m.todaysBills.map((b) => b.title).join(', ')}: <b>{fmtMoney(m.billsBeforeTodaysBills)}</b></span>
+            )}
+            {realNow != null && (
+              <span className="hero-sub whatif-diff">{Math.abs(realNow - m.billsNow) < 0.005 ? 'Same as your real plan' : <>Real plan <b>{fmtMoney(realNow)}</b> · what-if {fmtSigned(round2(m.billsNow - realNow))}</>}</span>
             )}
             <span className="hero-meta">
               {m.lowest && <span>Lowest this pay period: <b>{fmtMoney(m.lowest.amount)}</b> {m.lowest.ms === m.todayMs ? 'today' : `on ${fmtDow(m.lowest.ms)}`}</span>}

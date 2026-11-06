@@ -97,3 +97,4 @@ dl.kv { margin: 0; }
 .kv dd .sub { font-weight: 650; }
 .kv dd .block { display: block; font-size: 12px; font-weight: 650; color: var(--muted); margin-top: 1px; }
 .past-toggle { width: 100%; text-align: left; color: inherit; }
+.hero .whatif-diff { color: var(--text-2); font-size: 13px; padding: 5px 10px; border-radius: 10px; width: fit-content; max-width: 100%; background: color-mix(in oklab, var(--bills) 16%, transparent); }

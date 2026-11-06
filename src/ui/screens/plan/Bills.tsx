@@ -144,9 +144,9 @@ export function BillsPage({ sub }: { sub?: string }) {
         <section className="card flush">
           <div className="card-head pad">
             <span className="lbl">{data.bills.length} bill{data.bills.length === 1 ? '' : 's'}</span>
-            <span className="sort-pick"><span className="sub">Sort</span>
+            <label className="sort-pick"><span className="sub">Sort</span>
               <Select value={mode} options={SORTS} onChange={(v) => update((d) => { d.prefs.billsSort = v; }, { real: true })} />
-            </span>
+            </label>
           </div>
           <ReorderList items={list} idOf={(b) => b.id} enabled={mode === 'custom'} label="Bills" onMove={move}
             row={(b, handle) => <ItemRow item={b} next={nextOf(b)} handle={handle} count={counts.get(b.id)} today={today} onOpen={() => open(b)} />} />
