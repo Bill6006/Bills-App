@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dev-dist/
+coverage/
+*.log
+.DS_Store
+# Never commit personal exports or local parity data
+local/
+*.local.json
+bills-account-planner*.json
