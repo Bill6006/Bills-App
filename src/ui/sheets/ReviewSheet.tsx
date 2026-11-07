@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { fmtDow, fmtShort, parseISOToMs } from '../../engine/dates';
 import { fmtMoney, round2 } from '../../engine/money';
-import { billChoices, fileTxn, linkedBill, linkTxn, markAsBill, reviewAgain, reviewTxns, skipTxn } from '../../engine/bank/importer';
+import { billChoices, fileTxn, linkedBill, linkTxn, markAsBill, namedBill, reviewAgain, reviewTxns, skipTxn } from '../../engine/bank/importer';
 import { buildModel, predict, type Model } from '../../engine/bank/learn';
 import { describeMerchant } from '../../engine/bank/merchant';
 import { MISC_ID, type BankTxn, type RecurringItem } from '../../engine/types';
@@ -81,7 +81,7 @@ function ReviewItem({ t, model }: { t: BankTxn; model: Model }) {
   const now = () => new Date().toISOString();
   const when = fmtShort(parseISOToMs(t.date));
   const file = (extraId: string) => update((d) => { fileTxn(d, t.id, [{ extraId, amount }], now()); }, { undo: `${t.merchant} (${when}) filed in ${names(extraId)}` });
-  const guessBill = (t.billGuess ? data.bills.find((b) => b.id === t.billGuess!.id) : undefined) ?? (refund ? undefined : linkedBill(data, t));
+  const guessBill = (t.billGuess ? data.bills.find((b) => b.id === t.billGuess!.id) : undefined) ?? (refund ? undefined : linkedBill(data, t) ?? namedBill(data, t));
   const sameAsPlan = !!guessBill && Math.abs(Number(guessBill.amount) - amount) <= Math.max(0.5, amount * 0.02);
   const linkBill = (b: RecurringItem, updateAmount: boolean) => {
     const what = t.merchant.toLowerCase() === b.name.toLowerCase() ? `${b.name} (${when})` : `${t.merchant} (${when})`;

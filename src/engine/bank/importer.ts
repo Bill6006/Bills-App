@@ -356,6 +356,18 @@ export function linkedBill(d: AppData, t: BankTxn): RecurringItem | undefined {
   return l ? d.bills.find((b) => b.id === l.billId) : undefined;
 }
 
+/** One of your bills named in a transaction's text, by the same rules the import uses (for items already in To review). */
+export function namedBill(d: AppData, t: BankTxn): RecurringItem | undefined {
+  const words = textOf(describeMerchant(t.merchant), t);
+  return d.bills.find((b) => {
+    const info = describeMerchant(b.name);
+    if (!info.key || (info.key.length < 4 && !info.known)) return false;
+    if (!GENERAL_STORES.has(info.key)) return sameStore(info.key, t.merchantKey) || words.includes(` ${info.key} `);
+    const w = nameWords(b.name);
+    return w.length > 0 && w.every((x) => words.includes(` ${x} `));
+  });
+}
+
 /** Your bills with the likeliest first: the one it guessed, a name in the bank text, the same amount, a nearby due day. */
 export function billChoices(d: AppData, t: BankTxn): Array<{ bill: RecurringItem; likely: boolean }> {
   const words = textOf(describeMerchant(t.merchant), t);

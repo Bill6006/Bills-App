@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeDefaultData } from '../src/data/defaults';
-import { applyImport, billChoices, fileTxn, linkTxn, markAsBill, planImport, reviewTxns, skipTxn, txnIds } from '../src/engine/bank/importer';
+import { applyImport, billChoices, fileTxn, linkTxn, markAsBill, namedBill, planImport, reviewTxns, skipTxn, txnIds } from '../src/engine/bank/importer';
 import { buildModel, predict } from '../src/engine/bank/learn';
 import { describeMerchant } from '../src/engine/bank/merchant';
 import { parseAmountCell, parseDateCell, parseStatement } from '../src/engine/bank/statement';
@@ -355,6 +355,7 @@ describe('bills in an import', () => {
     expect(first.txn.billGuess).toEqual({ id: 'host', name: 'Hostly', amount: 2.75 });
     const t = d.bank.txns.find((x) => x.id === first.txn.id)!;
     expect(billChoices(d, t)[0]).toMatchObject({ bill: { id: 'host' }, likely: true });
+    expect(namedBill(d, { ...t, billGuess: undefined })?.id).toBe('host');
     expect(markAsBill(d, t.id, 'host')).toBe(true);
     expect(d.bank.txns.find((x) => x.id === t.id)).toMatchObject({ status: 'skipped', how: 'bill:Hostly', billId: 'host' });
     expect(d.bank.billLinks).toEqual([{ billId: 'host', text: 'hostly servers', amount: 14.2 }]);
