@@ -71,6 +71,8 @@ export function RulePicker({ rule, onChange, today }: { rule: Rule; onChange: (r
 export interface ItemEditorOpts {
   kind: 'bill' | 'budget' | 'income';
   item?: RecurringItem;
+  /** Starting values for a new item (e.g. a bill made from a bank charge). */
+  initial?: { name?: string; amount?: number; rule?: Rule };
   onSave: (item: RecurringItem) => void;
   onDelete?: (item: RecurringItem) => void;
   onMove?: (item: RecurringItem, dir: -1 | 1) => void;
@@ -86,14 +88,14 @@ export function openItemEditor(opts: ItemEditorOpts) {
   openSheet((close) => <ItemEditor {...opts} onClose={close} />);
 }
 
-function ItemEditor({ kind, item, onSave, onDelete, onMove, onClose }: ItemEditorOpts & { onClose: () => void }) {
+function ItemEditor({ kind, item, initial, onSave, onDelete, onMove, onClose }: ItemEditorOpts & { onClose: () => void }) {
   const data = useActive();
   const today = useStore((s) => s.today);
   const c = COPY[kind];
-  const [name, setName] = useState(item?.name ?? '');
-  const [amount, setAmount] = useState<number>(item ? item.amount : NaN);
+  const [name, setName] = useState(item?.name ?? initial?.name ?? '');
+  const [amount, setAmount] = useState<number>(item ? item.amount : initial?.amount ?? NaN);
   const defaultRule: Rule = kind === 'budget' ? { type: 'perpay' } : kind === 'income' ? { type: 'one_time', anchor: today } : { type: 'monthly_dom', dom: Number(today.slice(8, 10)) };
-  const [rule, setRule] = useState<Rule>(item?.rule ?? defaultRule);
+  const [rule, setRule] = useState<Rule>(item?.rule ?? initial?.rule ?? defaultRule);
   const draft: RecurringItem = { id: item?.id ?? newId(kind === 'bill' ? 'b' : kind === 'budget' ? 'x' : 'oi'), name: name.trim() || (kind === 'bill' ? 'Bill' : kind === 'budget' ? 'Budget' : 'Extra income'), amount: round2(amount), rule, ...(item?._extraMonth ? { _extraMonth: item._extraMonth } : {}) };
   const next = useMemo(() => (Number.isFinite(amount) ? nextOccurrences(draft, data.settings, today, 3) : []), [rule, data.settings, today, amount]); // eslint-disable-line react-hooks/exhaustive-deps
   const valid = name.trim().length > 0 && Number.isFinite(amount) && amount >= 0 && (rule.type === 'perpay' || rule.type === 'monthly_dom' || rule.type === 'weekly_dow' || isValidIso(rule.anchor || ''));

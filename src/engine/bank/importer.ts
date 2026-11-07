@@ -14,9 +14,9 @@ import { DAY_MS, parseISOToMs, type IsoDate } from '../dates';
 import { newId } from '../loans';
 import { round2 } from '../money';
 import { occurrencesForRange } from '../schedule';
-import { MISC_ID, type AppData, type BankTxn, type SpendEntry } from '../types';
+import { MISC_ID, type AppData, type BankTxn, type RecurringItem, type SpendEntry } from '../types';
 import { buildModel, predict, type Model, type Prediction } from './learn';
-import { describeMerchant, sameStore, type MerchantInfo, type MerchantKind } from './merchant';
+import { billPhrase, describeMerchant, GENERAL_STORES, nameWords, plainWords, sameStore, type MerchantInfo, type MerchantKind } from './merchant';
 import type { ParsedStatement, RawTxn } from './statement';
 
 export type ItemAction = 'log' | 'review' | 'skip' | 'match';
@@ -80,21 +80,42 @@ export function merchantOf(t: RawTxn): MerchantInfo {
   return m;
 }
 
-interface Ctx { data: AppData; model: Model; today: IsoDate; billNames: Array<{ key: string; known: boolean; name: string; amount: number }>; usedEntries: Set<string> }
+interface BillRef { id: string; key: string; known: boolean; name: string; amount: number; debt: boolean; words: string[]; strict: boolean }
+interface Ctx { data: AppData; model: Model; today: IsoDate; bills: BillRef[]; usedEntries: Set<string> }
 
-function billMatch(ctx: Ctx, t: RawTxn, m: MerchantInfo): string | null {
-  const words = ` ${m.key} ${`${t.description} ${t.memo || ''}`.toLowerCase().replace(/['’]/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ')} `;
+/** The words of a transaction's text, padded with spaces so whole words can be looked up. */
+const textOf = (m: MerchantInfo, t: { description: string; memo?: string }) => ` ${m.key} ${plainWords(t.description)} ${plainWords(t.memo || '')} `.replace(/\s+/g, ' ');
+/** Bills like electric vary, but not tenfold. */
+const nearAmount = (amt: number, base: number) => !(base > 0) || (amt >= base * 0.5 && amt <= base * 2);
+
+interface BillHit { sure?: { id: string; name: string }; guess?: { id: string; name: string; amount: number } }
+
+/** One of your bills (or loans): sure, or a guess when the name fits but the amount is far from the plan's. */
+function billMatch(ctx: Ctx, t: RawTxn, m: MerchantInfo): BillHit {
+  const words = textOf(m, t);
   const amt = round2(-t.flow);
-  // The bill's name in the text and a similar amount (bills like electric vary, but not tenfold).
-  for (const b of ctx.billNames) {
-    if ((b.key.length < 4 && !b.known) || !(sameStore(b.key, m.key) || words.includes(` ${b.key} `))) continue;
-    if (!(b.amount > 0) || (amt >= b.amount * 0.5 && amt <= b.amount * 2)) return b.name;
+  let guess: BillHit['guess'];
+  // Bank text you said is a bill (closest remembered amount first, when several bills share it).
+  const links = (ctx.data.bank.billLinks || []).slice().sort((a, b) => Math.abs(a.amount - amt) - Math.abs(b.amount - amt));
+  for (const l of links) {
+    const b = l.text && words.includes(` ${l.text} `) ? ctx.data.bills.find((x) => x.id === l.billId) : undefined;
+    if (!b) continue;
+    if (nearAmount(amt, l.amount) || nearAmount(amt, Number(b.amount) || 0)) return { sure: { id: b.id, name: b.name } };
+    guess ??= { id: b.id, name: b.name, amount: Number(b.amount) || 0 };
+  }
+  // The bill's name in the text and a similar amount. A bill named after a store where you also shop
+  // ("Google Play Pass", "Amazon Prime") needs its whole name in the text.
+  for (const b of ctx.bills) {
+    const named = b.strict ? b.words.length > 0 && b.words.every((w) => words.includes(` ${w} `)) : sameStore(b.key, m.key) || words.includes(` ${b.key} `);
+    if ((b.key.length < 4 && !b.known) || !named) continue;
+    if (nearAmount(amt, b.amount)) return { sure: { id: b.id, name: b.name } };
+    if (!b.debt) guess ??= { id: b.id, name: b.name, amount: b.amount };
   }
   // Same amount within a few days of a bill's date.
   const ms = parseISOToMs(t.date);
   const occ = occurrencesForRange(ms - 4 * DAY_MS, ms + 4 * DAY_MS, ctx.data.bills, ctx.data.settings);
-  for (const list of occ.values()) for (const o of list) if (Math.abs(Number(o.amount) - amt) < 0.005) return o.name;
-  return null;
+  for (const list of occ.values()) for (const o of list) if (Math.abs(Number(o.amount) - amt) < 0.005) return { sure: { id: o.id, name: o.name } };
+  return { guess };
 }
 
 /**
@@ -150,9 +171,12 @@ function classify(ctx: Ctx, id: string, t: RawTxn): PlanItem {
     const isPay = m.kind === 'payroll' || [s.pay.paycheckCap, s.pay2?.paycheckCap].some((cap) => cap && Math.abs(Number(cap) - t.flow) < 1);
     if (isPay) return skip('paycheck');
     if (m.kind === 'interest' || m.kind === 'p2p' || !m.key || !ctx.model.byKey.has(m.key)) return skip('money in');
-  } else {
+  }
+  let billGuess: BillHit['guess'];
+  if (!moneyIn) {
     const bill = billMatch(ctx, t, m);
-    if (bill) return { ...skip('bill'), txn: { ...txn, status: 'skipped', how: `bill:${bill}` } };
+    if (bill.sure) return { ...skip('bill'), txn: { ...txn, status: 'skipped', how: `bill:${bill.sure.name}`, billId: bill.sure.id } };
+    billGuess = bill.guess;
   }
 
   const refund = moneyIn;
@@ -162,11 +186,11 @@ function classify(ctx: Ctx, id: string, t: RawTxn): PlanItem {
     return { txn: { ...txn, status: 'logged', how: 'matched' }, action: 'match', matchEntryId: sure.id, refund };
   }
   const prediction = predict(ctx.model, m, Math.abs(t.flow), t.bankCategory);
-  const withSuggest = { ...txn, suggest: prediction.suggestions.map((s) => ({ extraId: s.extraId, p: round2(s.p) })), maybeSameAs: maybe?.id };
-  if (rule?.action === 'budget' && rule.extraId && ctx.model.budgets.has(rule.extraId) && !maybe) {
+  const withSuggest = { ...txn, suggest: prediction.suggestions.map((s) => ({ extraId: s.extraId, p: round2(s.p) })), maybeSameAs: maybe?.id, ...(billGuess ? { billGuess } : {}) };
+  if (rule?.action === 'budget' && rule.extraId && ctx.model.budgets.has(rule.extraId) && !maybe && !billGuess) {
     return { txn: { ...withSuggest, status: 'logged', how: 'rule' }, action: 'log', extraId: rule.extraId, refund, prediction };
   }
-  const mustAsk = rule?.action === 'ask' || m.kind === 'p2p' || m.kind === 'fee' || !!maybe;
+  const mustAsk = rule?.action === 'ask' || m.kind === 'p2p' || m.kind === 'fee' || !!maybe || !!billGuess;
   if (!mustAsk && prediction.auto) {
     return { txn: { ...withSuggest, status: 'logged', how: 'auto' }, action: 'log', extraId: prediction.suggestions[0].extraId, refund, prediction };
   }
@@ -176,11 +200,14 @@ function classify(ctx: Ctx, id: string, t: RawTxn): PlanItem {
 /** What an import would do, without changing anything. */
 export function planImport(data: AppData, parsed: ParsedStatement, today: IsoDate, opts: { includePending?: boolean } = {}): ImportPlan {
   const model = buildModel(data, today);
-  const billNames = [
-    ...data.bills.map((b) => ({ name: b.name, amount: Number(b.amount) || 0 })),
-    ...data.debts.map((x) => ({ name: x.name, amount: round2(Number(x.minPayment || 0) + Number(x.extraPayment || 0)) })),
-  ].map((b) => { const info = describeMerchant(b.name); return { ...b, key: info.key, known: info.known }; }).filter((b) => b.key);
-  const ctx: Ctx = { data, model, today, billNames, usedEntries: new Set() };
+  const bills = [
+    ...data.bills.map((b) => ({ id: b.id, name: b.name, amount: Number(b.amount) || 0, debt: false })),
+    ...data.debts.map((x) => ({ id: x.id, name: x.name, amount: round2(Number(x.minPayment || 0) + Number(x.extraPayment || 0)), debt: true })),
+  ].map((b) => {
+    const info = describeMerchant(b.name);
+    return { ...b, key: info.key, known: info.known, words: nameWords(b.name), strict: GENERAL_STORES.has(info.key) || model.byKey.has(info.key) };
+  }).filter((b) => b.key);
+  const ctx: Ctx = { data, model, today, bills, usedEntries: new Set() };
   const known = new Set(data.bank.txns.map((t) => t.id));
   const ids = txnIds(parsed.txns);
   const items: PlanItem[] = [];
@@ -291,6 +318,64 @@ export function skipTxn(d: AppData, txnId: string, always = false) {
   }
 }
 
+/**
+ * It's one of your bills, not spending. Pass a new bill to add it to your bills as well. The bank's text is
+ * remembered for that bill, so the next charge like it is recognized even when its amount differs from the plan's.
+ */
+export function markAsBill(d: AppData, txnId: string, bill: string | RecurringItem, opts: { updateAmount?: boolean } = {}): boolean {
+  const t = txnOf(d, txnId);
+  if (!t) return false;
+  let b: RecurringItem | undefined;
+  if (typeof bill === 'string') b = d.bills.find((x) => x.id === bill);
+  else if (!d.bills.some((x) => x.id === bill.id)) {
+    b = { ...bill };
+    d.bills.push(b);
+    d.order.bills = [...d.order.bills.filter((id) => id !== b!.id), b.id];
+  } else b = d.bills.find((x) => x.id === bill.id);
+  if (!b) return false;
+  const amount = round2(Math.abs(t.amount));
+  if (opts.updateAmount) b.amount = amount;
+  clearEntries(d, t);
+  t.status = 'skipped';
+  t.how = `bill:${b.name}`;
+  t.billId = b.id;
+  delete t.maybeSameAs;
+  delete t.billGuess;
+  const text = billPhrase(t.description);
+  if (text) d.bank.billLinks = [...(d.bank.billLinks || []).filter((l) => !(l.text === text && l.billId === b!.id)), { billId: b.id, text, amount }];
+  return true;
+}
+
+/** The bill whose remembered bank text is in this transaction (so a second charge like one you just marked is spotted). */
+export function linkedBill(d: AppData, t: BankTxn): RecurringItem | undefined {
+  const words = textOf(describeMerchant(t.merchant), t);
+  const amt = Math.abs(t.amount);
+  const links = (d.bank.billLinks || []).filter((x) => x.text && words.includes(` ${x.text} `) && d.bills.some((b) => b.id === x.billId));
+  // Of several bills with this bank text, the one charged closest to this amount.
+  const l = links.sort((a, b) => Math.abs(a.amount - amt) - Math.abs(b.amount - amt))[0];
+  return l ? d.bills.find((b) => b.id === l.billId) : undefined;
+}
+
+/** Your bills with the likeliest first: the one it guessed, a name in the bank text, the same amount, a nearby due day. */
+export function billChoices(d: AppData, t: BankTxn): Array<{ bill: RecurringItem; likely: boolean }> {
+  const words = textOf(describeMerchant(t.merchant), t);
+  const amt = Math.abs(t.amount), day = Number(t.date.slice(8, 10));
+  const order = new Map(d.order.bills.map((id, i) => [id, i]));
+  const score = (b: RecurringItem) => {
+    const info = describeMerchant(b.name);
+    let s = 0;
+    if (t.billGuess?.id === b.id) s += 8;
+    if ((d.bank.billLinks || []).some((l) => l.billId === b.id && words.includes(` ${l.text} `))) s += 6;
+    if (info.key && (sameStore(info.key, t.merchantKey) || (info.key.length >= 4 && words.includes(` ${info.key} `)))) s += 4;
+    if (Number(b.amount) > 0 && Math.abs(Number(b.amount) - amt) <= Math.max(0.5, amt * 0.02)) s += 2;
+    if (b.rule.type === 'monthly_dom' && Math.abs(Number(b.rule.dom || 0) - day) <= 3) s += 1;
+    return s;
+  };
+  return d.bills.map((bill) => ({ bill, s: score(bill) }))
+    .sort((a, b) => b.s - a.s || (order.get(a.bill.id) ?? 999) - (order.get(b.bill.id) ?? 999))
+    .map(({ bill, s }) => ({ bill, likely: s >= 3 }));
+}
+
 /** It's the same purchase as a log you already have: link them instead of adding another. */
 export function linkTxn(d: AppData, txnId: string, entryId: string) {
   const t = txnOf(d, txnId);
@@ -312,6 +397,7 @@ export function reviewAgain(d: AppData, txnId: string) {
   clearEntries(d, t);
   t.status = 'review';
   t.how = '';
+  delete t.billId;
 }
 
 /** A store rule you set on the Bank import page ('learn' removes it). */

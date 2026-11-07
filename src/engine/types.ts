@@ -171,7 +171,14 @@ export interface BankTxn {
   suggest?: Array<{ extraId: string; p: number }>;
   /** A log you entered yourself that might be this same purchase. */
   maybeSameAs?: string;
+  /** The bill this was (when skipped as a bill). */
+  billId?: string;
+  /** One of your bills this looks like, though the amount is far from the plan's. */
+  billGuess?: { id: string; name: string; amount: number };
 }
+
+/** Bank text you said is one of your bills ("ionos"), so the next charge is recognized. */
+export interface BillLink { billId: string; text: string; amount: number }
 
 /** Your own rule for a store: always file it in a budget, always ask, or always skip it. */
 export interface MerchantRule { key: string; name: string; action: 'budget' | 'ask' | 'skip'; extraId?: string }
@@ -198,6 +205,7 @@ export interface BankData {
   txns: BankTxn[];
   rules: MerchantRule[];
   profiles: CsvProfile[];
+  billLinks?: BillLink[];
   lastImportAt?: string;
   /** Latest transaction date seen in an import. */
   lastTxnDate?: IsoDate;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeDefaultData } from '../src/data/defaults';
-import { applyImport, fileTxn, linkTxn, planImport, reviewTxns, skipTxn, txnIds } from '../src/engine/bank/importer';
+import { applyImport, billChoices, fileTxn, linkTxn, markAsBill, planImport, reviewTxns, skipTxn, txnIds } from '../src/engine/bank/importer';
 import { buildModel, predict } from '../src/engine/bank/learn';
 import { describeMerchant } from '../src/engine/bank/merchant';
 import { parseAmountCell, parseDateCell, parseStatement } from '../src/engine/bank/statement';
@@ -341,5 +341,61 @@ describe('importing', () => {
     const { plan } = doImport(d, csv);
     expect(plan.items[0]).toMatchObject({ action: 'log', extraId: 'ff', refund: true });
     expect(d.spendEntries.at(-1)).toMatchObject({ amount: -12.48, entryType: 'refund' });
+  });
+});
+
+describe('bills in an import', () => {
+  const csv = (rows: string[]) => `Date,Description,Amount\n${rows.join('\n')}\n`;
+
+  it('asks about a charge that names a bill but not its amount, and knows it next time', () => {
+    const d = sampleData();
+    d.bills.push({ id: 'host', name: 'Hostly', amount: 2.75, rule: { type: 'monthly_dom', dom: 20 } });
+    const first = doImport(d, csv(['10/06/2026,HOSTLY SERVERS 800-555-0100 PAUS,-14.20'])).plan.items[0];
+    expect(first.action).toBe('review');
+    expect(first.txn.billGuess).toEqual({ id: 'host', name: 'Hostly', amount: 2.75 });
+    const t = d.bank.txns.find((x) => x.id === first.txn.id)!;
+    expect(billChoices(d, t)[0]).toMatchObject({ bill: { id: 'host' }, likely: true });
+    expect(markAsBill(d, t.id, 'host')).toBe(true);
+    expect(d.bank.txns.find((x) => x.id === t.id)).toMatchObject({ status: 'skipped', how: 'bill:Hostly', billId: 'host' });
+    expect(d.bank.billLinks).toEqual([{ billId: 'host', text: 'hostly servers', amount: 14.2 }]);
+    expect(d.bills.find((b) => b.id === 'host')!.amount).toBe(2.75);
+    const next = doImport(d, csv(['11/06/2026,HOSTLY SERVERS 800-555-0100 PAUS,-14.20'])).plan.items[0];
+    expect(next).toMatchObject({ action: 'skip', txn: { how: 'bill:Hostly', billId: 'host' } });
+  });
+
+  it('can change the bill to the charged amount, or add a new bill made from the charge', () => {
+    const d = sampleData();
+    d.bills.push({ id: 'host', name: 'Hostly', amount: 2.75, rule: { type: 'monthly_dom', dom: 20 } });
+    const [a, b] = doImport(d, csv(['10/06/2026,HOSTLY SERVERS 800-555-0100 PAUS,-14.20', '10/24/2026,STREAMBOX* PLUS SUB STREAMBOX.COM CAUS,-19.50'])).plan.items;
+    markAsBill(d, a.txn.id, 'host', { updateAmount: true });
+    expect(d.bills.find((x) => x.id === 'host')!.amount).toBe(14.2);
+    expect(b.action).toBe('review');
+    markAsBill(d, b.txn.id, { id: 'new1', name: 'Streambox', amount: 19.5, rule: { type: 'monthly_dom', dom: 24 } });
+    expect(d.bills.find((x) => x.id === 'new1')).toMatchObject({ name: 'Streambox', amount: 19.5 });
+    expect(d.order.bills).toContain('new1');
+    expect(d.bank.txns.find((x) => x.id === b.txn.id)).toMatchObject({ status: 'skipped', how: 'bill:Streambox' });
+    const next = doImport(d, csv(['11/24/2026,STREAMBOX* PLUS SUB STREAMBOX.COM CAUS,-19.50'])).plan.items[0];
+    expect(next.txn.how).toBe('bill:Streambox');
+  });
+
+  it('keeps two bills that share bank text apart by amount', () => {
+    const d = sampleData();
+    const [a, b] = doImport(d, csv(['10/24/2026,STREAMBOX* PLUS SUB STREAMBOX.COM CAUS,-79.00', '10/24/2026,STREAMBOX* PLUS SUB STREAMBOX.COM CAUS,-19.50'])).plan.items;
+    markAsBill(d, a.txn.id, { id: 'big', name: 'Streambox Max', amount: 79, rule: { type: 'monthly_dom', dom: 24 } });
+    markAsBill(d, b.txn.id, { id: 'small', name: 'Streambox Extra', amount: 19.5, rule: { type: 'monthly_dom', dom: 24 } });
+    expect(d.bank.billLinks).toHaveLength(2);
+    const items = doImport(d, csv(['11/24/2026,STREAMBOX* PLUS SUB STREAMBOX.COM CAUS,-79.00', '11/24/2026,STREAMBOX* PLUS SUB STREAMBOX.COM CAUS,-19.50'])).plan.items;
+    expect(items.map((i) => i.txn.how).sort()).toEqual(['bill:Streambox Extra', 'bill:Streambox Max']);
+  });
+
+  it("remembers a bill by its own words, so other purchases at the same store aren't hidden", () => {
+    const d = sampleData();
+    d.bills.push({ id: 'club', name: 'Membership', amount: 15.49, rule: { type: 'monthly_dom', dom: 13 } });
+    const [m] = doImport(d, csv(['10/13/2026,AMAZON PRIME*AB12CD34E AMZN.COM/BILL WAUS,-15.49'])).plan.items;
+    markAsBill(d, m.txn.id, 'club');
+    expect(d.bank.billLinks?.[0].text).toBe('amazon prime');
+    const items = doImport(d, csv(['11/13/2026,AMAZON PRIME*X1Y2Z3 AMZN.COM/BILL WAUS,-15.49', '11/02/2026,AMAZON.COM*ZZ98YY76X AMZN.COM/BILL WAUS,-15.99'])).plan.items;
+    expect(items.find((i) => /PRIME/.test(i.txn.description))!.txn.how).toBe('bill:Membership');
+    expect(items.find((i) => /ZZ98YY76X/.test(i.txn.description))!.txn.how).not.toMatch(/^bill/);
   });
 });

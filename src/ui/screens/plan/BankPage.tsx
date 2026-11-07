@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { fmtMedium, fmtShort, parseISOToMs } from '../../../engine/dates';
+import { fmtMoney } from '../../../engine/money';
 import { removeImport, reviewTxns, setRule } from '../../../engine/bank/importer';
 import { buildModel, learnedStores } from '../../../engine/bank/learn';
 import { describeMerchant } from '../../../engine/bank/merchant';
@@ -39,7 +40,7 @@ export function BankPage() {
     <div className="page page-narrow">
       <PlanHeader title="Bank import" />
       <section className="card">
-        <p className="sub body">Download your transactions from your bank as CSV, QFX or OFX and import them. Purchases are filed into budgets when the app is sure, and the rest wait in To review. Every week or two keeps "left to spend" accurate.</p>
+        <p className="sub body">Import your bank's monthly PDF statement, or a CSV, QFX or OFX download if your bank offers one. Purchases are filed into budgets when the app is sure, and the rest wait in To review.</p>
         <div className="btn-row wrap">
           <button type="button" className="btn" onClick={openBankImport}><IconFile />Import a file</button>
           {toReview > 0 && <button type="button" className="btn ghost" onClick={openReview}>Review {toReview}</button>}
@@ -65,6 +66,23 @@ export function BankPage() {
         ) : <p className="sub pad">Stores appear here once you've logged or imported purchases with a store name.</p>}
         {stores.length > 20 && <button type="button" className="link-btn pad" onClick={() => setShowAll((v) => !v)}>{showAll ? 'Show fewer' : `Show all ${stores.length}`}</button>}
       </section>
+
+      {(data.bank.billLinks || []).length > 0 && (
+        <section className="card flush">
+          <div className="pad"><span className="lbl">Bank text it knows as your bills</span></div>
+          <div className="list">
+            {(data.bank.billLinks || []).map((l) => {
+              const bill = data.bills.find((b) => b.id === l.billId);
+              return (
+                <div key={`${l.text}|${l.billId}`} className="row no-lead">
+                  <span className="main-col"><span className="title">{bill ? bill.name : 'A bill you deleted'}</span><span className="sub mono-ish">{l.text.toUpperCase()} · last {fmtMoney(l.amount)}</span></span>
+                  <span className="trail"><button type="button" className="btn ghost sm" onClick={() => update((d) => { d.bank.billLinks = (d.bank.billLinks || []).filter((x) => !(x.text === l.text && x.billId === l.billId)); }, { real: true, undo: 'Forgotten' })}>Forget</button></span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {data.bank.profiles.length > 0 && (
         <section className="card flush">

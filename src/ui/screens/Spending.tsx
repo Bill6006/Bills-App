@@ -89,7 +89,8 @@ export function Spending({ sub }: { sub?: string }) {
         </section>
       ) : (
         <>
-          <Budgets engine={engine} data={data} scopeKind={kind} range={range} isCurrent={isCurrent} today={today} onShowHistory={() => setView('history')} />
+          <Budgets engine={engine} data={data} scopeKind={kind} range={range} isCurrent={isCurrent} today={today} onShowHistory={() => setView('history')}
+            onJump={(iso) => { setAnchor(iso); setMk(iso.slice(0, 7)); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
           <ComingPeriods engine={engine} data={data} today={today} onJump={(iso) => { if (kind !== 'period') setKind('period'); setAnchor(iso); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
         </>
       ))}
@@ -109,7 +110,7 @@ export function Spending({ sub }: { sub?: string }) {
   );
 }
 
-function Budgets({ engine, data, scopeKind, range: r, isCurrent: cur, today: t, onShowHistory }: { engine: PlanEngine; data: AppData; scopeKind: 'period' | 'month'; range: ReturnType<typeof scopeRange>; isCurrent: boolean; today: IsoDate; onShowHistory: () => void }) {
+function Budgets({ engine, data, scopeKind, range: r, isCurrent: cur, today: t, onShowHistory, onJump }: { engine: PlanEngine; data: AppData; scopeKind: 'period' | 'month'; range: ReturnType<typeof scopeRange>; isCurrent: boolean; today: IsoDate; onShowHistory: () => void; onJump: (iso: IsoDate) => void }) {
     const rows = orderedRows(data, r.snapshot);
     const totals = r.snapshot.totals;
     const pct = totals.budget > 0 ? (Math.max(0, totals.spent) / totals.budget) * 100 : 0;
@@ -137,7 +138,9 @@ function Budgets({ engine, data, scopeKind, range: r, isCurrent: cur, today: t, 
           {scopeKind === 'period' && <button type="button" className="btn ghost" onClick={() => openMoveMoney({ date: logDate })}><IconMove />Move money</button>}
         </div>
         <button type="button" className="btn ghost block" onClick={openBankImport}><IconFile />Import from your bank</button>
-        {data.bank.lastTxnDate && cur && <p className="sub center">Bank purchases imported through {fmtShort(parseISOToMs(data.bank.lastTxnDate))}.</p>}
+        {data.bank.lastTxnDate && cur && (parseISOToMs(data.bank.lastTxnDate) < r.startMs
+          ? <p className="sub center">Bank purchases imported through {fmtShort(parseISOToMs(data.bank.lastTxnDate))}, so they're in earlier {scopeKind === 'period' ? 'pay periods' : 'months'}. <button type="button" className="link-btn" onClick={() => onJump(data.bank.lastTxnDate!)}>See them</button></p>
+          : <p className="sub center">Bank purchases imported through {fmtShort(parseISOToMs(data.bank.lastTxnDate))}.</p>)}
 
         <section className="card flush">
           <div className="list">

@@ -1,17 +1,18 @@
 import { useMemo, useState } from 'react';
 import { fmtDow, fmtShort, parseISOToMs } from '../../engine/dates';
 import { fmtMoney, round2 } from '../../engine/money';
-import { fileTxn, linkTxn, reviewAgain, reviewTxns, skipTxn } from '../../engine/bank/importer';
+import { billChoices, fileTxn, linkedBill, linkTxn, markAsBill, reviewAgain, reviewTxns, skipTxn } from '../../engine/bank/importer';
 import { buildModel, predict, type Model } from '../../engine/bank/learn';
 import { describeMerchant } from '../../engine/bank/merchant';
-import { MISC_ID, type BankTxn } from '../../engine/types';
+import { MISC_ID, type BankTxn, type RecurringItem } from '../../engine/types';
 import { openSheet } from '../../state/sheets';
 import { update, useActive, useStore } from '../../state/store';
 import { budgetOptions, displayName, type BudgetOption } from '../../state/spendingModels';
 import { Sheet } from '../components/Sheet';
 import { Amount, Note } from '../components/bits';
 import { MoneyInput, Select } from '../components/controls';
-import { IconCheckCircle, IconChevronDown, IconClose, IconPlus } from '../icons';
+import { IconCheckCircle, IconChevronDown, IconClose, IconPlus, IconReceipt } from '../icons';
+import { openItemEditor } from '../screens/plan/ItemEditor';
 import { skipReason } from './bankText';
 import { quickActions } from './quickActions';
 
@@ -67,7 +68,8 @@ function whyText(t: BankTxn, s: Array<{ extraId: string; p: number }>, names: (i
 
 function ReviewItem({ t, model }: { t: BankTxn; model: Model }) {
   const data = useActive();
-  const [mode, setMode] = useState<'pick' | 'more' | 'split' | 'skip'>('pick');
+  const [mode, setMode] = useState<'pick' | 'more' | 'split' | 'skip' | 'bill' | 'billAmount'>('pick');
+  const [pending, setPending] = useState<RecurringItem | null>(null);
   const opts = budgetOptions(data).filter((o) => !o.archived);
   const names = (id: string) => displayName(data, id);
   const amount = round2(Math.abs(t.amount));
@@ -77,7 +79,22 @@ function ReviewItem({ t, model }: { t: BankTxn; model: Model }) {
   const refund = t.amount > 0;
   const maybe = t.maybeSameAs ? data.spendEntries.find((e) => e.id === t.maybeSameAs) : undefined;
   const now = () => new Date().toISOString();
-  const file = (extraId: string) => update((d) => { fileTxn(d, t.id, [{ extraId, amount }], now()); }, { undo: `${t.merchant} filed in ${names(extraId)}` });
+  const when = fmtShort(parseISOToMs(t.date));
+  const file = (extraId: string) => update((d) => { fileTxn(d, t.id, [{ extraId, amount }], now()); }, { undo: `${t.merchant} (${when}) filed in ${names(extraId)}` });
+  const guessBill = (t.billGuess ? data.bills.find((b) => b.id === t.billGuess!.id) : undefined) ?? (refund ? undefined : linkedBill(data, t));
+  const sameAsPlan = !!guessBill && Math.abs(Number(guessBill.amount) - amount) <= Math.max(0.5, amount * 0.02);
+  const linkBill = (b: RecurringItem, updateAmount: boolean) => {
+    const what = t.merchant.toLowerCase() === b.name.toLowerCase() ? `${b.name} (${when})` : `${t.merchant} (${when})`;
+    update((d) => { markAsBill(d, t.id, b.id, { updateAmount }); },
+      { undo: updateAmount ? `${what} marked as your ${b.name} bill, now ${fmtMoney(amount)}` : `${what} marked as your ${b.name} bill` });
+  };
+  const chooseBill = (b: RecurringItem) => {
+    if (Math.abs(Number(b.amount) - amount) > Math.max(0.5, amount * 0.02)) { setPending(b); setMode('billAmount'); } else linkBill(b, false);
+  };
+  const newBill = () => openItemEditor({
+    kind: 'bill', initial: { name: t.merchant, amount, rule: { type: 'monthly_dom', dom: Number(t.date.slice(8, 10)) } },
+    onSave: (item) => update((d) => { markAsBill(d, t.id, item); }, { undo: `${item.name} added to your bills` }),
+  });
 
   return (
     <section className="card review-item">
@@ -85,7 +102,12 @@ function ReviewItem({ t, model }: { t: BankTxn; model: Model }) {
         <span className="main-col"><span className="strong">{t.merchant}</span><span className="sub">{fmtDow(parseISOToMs(t.date))} · <span className="mono-ish">{t.description.slice(0, 60)}</span></span></span>
         <span className="trail"><Amount value={refund ? amount : -amount} signed tone={refund ? 'pos' : undefined} />{refund && <span className="sub">Refund</span>}</span>
       </div>
-      <p className="sub">{whyText(t, guesses, names)}</p>
+      {guessBill && mode === 'pick' && (
+        <Note tone="info" action={<button type="button" className="btn sm ghost" onClick={() => chooseBill(guessBill)}>Yes, it's my {guessBill.name} bill</button>}>
+          {sameAsPlan ? `Looks like your ${guessBill.name} bill.` : `Looks like your ${guessBill.name} bill, but your plan has it at ${fmtMoney(Number(guessBill.amount) || 0)}.`}
+        </Note>
+      )}
+      {!guessBill && mode !== 'bill' && mode !== 'billAmount' && <p className="sub">{whyText(t, guesses, names)}</p>}
       {maybe && (
         <Note tone="info" action={<button type="button" className="btn sm ghost" onClick={() => update((d) => linkTxn(d, t.id, maybe.id), { undo: 'Matched to your log' })}>Yes, same purchase</button>}>
           Maybe the same as your {fmtShort(parseISOToMs(maybe.date))} log: {maybe.note || names(maybe.extraId)}, {fmtMoney(Math.abs(maybe.amount))} in {names(maybe.extraId)}.
@@ -102,19 +124,55 @@ function ReviewItem({ t, model }: { t: BankTxn; model: Model }) {
       {mode === 'more' && (
         <div className="chips">
           {opts.map((o) => <button key={o.id} type="button" className="cp" onClick={() => file(o.id)}>{o.name}</button>)}
+          {!refund && <button type="button" className="cp with-icon" onClick={() => setMode('bill')}><IconReceipt />It's a bill</button>}
           <button type="button" className="cp ghost-cp" onClick={() => setMode('pick')}>Back</button>
+        </div>
+      )}
+      {mode === 'bill' && <BillPicker t={t} onPick={chooseBill} onNew={newBill} onBack={() => setMode('pick')} />}
+      {mode === 'billAmount' && pending && (
+        <div className="stack">
+          <p className="sub body">Your plan has {pending.name} at {fmtMoney(Number(pending.amount) || 0)}. This charge was {fmtMoney(amount)}.</p>
+          <div className="btn-row wrap">
+            <button type="button" className="btn sm" onClick={() => linkBill(pending, true)}>Make it {fmtMoney(amount)}</button>
+            <button type="button" className="btn sm ghost" onClick={() => linkBill(pending, false)}>Keep {fmtMoney(Number(pending.amount) || 0)}</button>
+            <button type="button" className="btn sm quiet" onClick={() => setMode('bill')}>Back</button>
+          </div>
         </div>
       )}
       {mode === 'skip' && (
         <div className="btn-row wrap">
           <button type="button" className="btn sm ghost" onClick={() => update((d) => skipTxn(d, t.id), { undo: `${t.merchant} skipped` })}>Not spending</button>
           {t.merchantKey && <button type="button" className="btn sm ghost" onClick={() => update((d) => skipTxn(d, t.id, true), { undo: `${t.merchant} will be skipped from now on` })}>Always skip {t.merchant}</button>}
+          {!refund && <button type="button" className="btn sm ghost" onClick={() => setMode('bill')}><IconReceipt />It's one of my bills</button>}
           <button type="button" className="btn sm quiet" onClick={() => setMode('pick')}>Back</button>
         </div>
       )}
       {mode === 'split' && <SplitEditor total={amount} options={opts} initial={suggested} onCancel={() => setMode('pick')}
         onSave={(parts) => update((d) => { fileTxn(d, t.id, parts, now()); }, { undo: `${t.merchant} split across ${parts.length} budgets` })} />}
     </section>
+  );
+}
+
+/** "Which bill is it?": the likeliest bills as chips, every bill in a list, or a new bill made from this charge. */
+function BillPicker({ t, onPick, onNew, onBack }: { t: BankTxn; onPick: (b: RecurringItem) => void; onNew: () => void; onBack: () => void }) {
+  const data = useActive();
+  const choices = billChoices(data, t);
+  const likely = choices.filter((c) => c.likely).slice(0, 3).map((c) => c.bill);
+  const rest = choices.map((c) => c.bill).filter((b) => !likely.includes(b));
+  const label = (b: RecurringItem) => `${b.name} · ${fmtMoney(Number(b.amount) || 0)}`;
+  return (
+    <div className="stack">
+      <p className="sub">Which bill is it? It won't count as spending, and the app will know this charge next time.</p>
+      {likely.length > 0 && <div className="chips">{likely.map((b) => <button key={b.id} type="button" className="cp on-soft" onClick={() => onPick(b)}>{label(b)}</button>)}</div>}
+      {rest.length > 0 && (
+        <Select value="" onChange={(id) => { const b = rest.find((x) => x.id === id); if (b) onPick(b); }}
+          options={[{ value: '', label: likely.length ? 'Another bill…' : 'Pick the bill…' }, ...rest.map((b) => ({ value: b.id, label: label(b) }))]} />
+      )}
+      <div className="btn-row wrap">
+        <button type="button" className="btn sm ghost" onClick={onNew}><IconPlus />Add it as a new bill</button>
+        <button type="button" className="btn sm quiet" onClick={onBack}>Back</button>
+      </div>
+    </div>
   );
 }
 

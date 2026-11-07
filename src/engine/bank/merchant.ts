@@ -276,6 +276,32 @@ export function describeMerchant(raw: string): MerchantInfo {
   return { name: title(words.slice(0, Math.min(3, words.length)).join(' ')), key: keyWords.join(''), kind, known: false };
 }
 
+/** Stores that sell many different things; a bill named after one ("Google Play Pass") must match by its whole name. */
+export const GENERAL_STORES = new Set(['amazon', 'google', 'apple', 'youtube', 'walmart', 'target', 'costco', 'samsclub', 'kroger', 'meijer', 'cvs', 'walgreens', 'dollargeneral', 'dollartree', 'homedepot', 'lowes', 'bestbuy', 'paypal']);
+
+/** The words of a bill's name that identify it ("AT&T (B)" → ["att"], "Honda app" → ["honda"]). */
+export function nameWords(name: string): string[] {
+  return tidy(name).split(' ').filter((w) => w.length >= 2 && !/^(bill|bills|payment|pmt|monthly|sub|subscription|the|my|app|auto|autopay|plan)$/.test(w));
+}
+
+/** Bank text as plain lowercase words ("AT&T MOBILITY" → "att mobility"), the way store names are matched. */
+export const plainWords = (raw: string): string => tidy(raw);
+
+/**
+ * The first words of a bank's text that name what was paid, for recognizing a bill next time:
+ * "HOSTLY SERVERS 800-555-0100 PAUS" → "hostly servers", "AMAZON PRIME*AB12CD34E" → "amazon prime".
+ */
+export function billPhrase(raw: string): string {
+  const t = tidy(raw).replace(LEADING, '').trim();
+  const words: string[] = [];
+  for (const w of t.split(' ')) {
+    if (!w || /\d/.test(w) || /^#/.test(w)) break;
+    words.push(w);
+    if (words.length === 3) break;
+  }
+  return words.join(' ');
+}
+
 /** Levenshtein distance, for small typos like "panarabread". */
 export function editDistance(a: string, b: string): number {
   if (a === b) return 0;
