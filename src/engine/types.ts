@@ -1,3 +1,4 @@
+import type { MerchantKind } from './bank/merchant';
 import type { IsoDate, MonthKey } from './dates';
 
 /** How a bill, budget, extra income or withdrawal repeats (same rule types as v117). */
@@ -157,6 +158,8 @@ export interface BankTxn {
   description: string;
   merchant: string;
   merchantKey: string;
+  /** Gas station, restaurant, ATM, transfer, … when known. */
+  kind?: MerchantKind;
   bankCategory?: string;
   account?: string;
   status: 'logged' | 'review' | 'skipped';

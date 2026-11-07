@@ -1,10 +1,11 @@
 /**
  * Reads bank statement downloads: CSV in the layouts banks commonly use (found by looking at the headers and
- * the values), and OFX/QFX (the "Quicken" / "Money" downloads). Everything becomes RawTxn with a signed
- * money flow (negative = money out).
+ * the values), and OFX/QFX (the "Quicken" / "Money" downloads). PDF statements are read in pdfStatement.ts.
+ * Everything becomes RawTxn with a signed money flow (negative = money out).
  */
 import { daysInMonth, isoDate, msUTC, type IsoDate } from '../dates';
 import type { CsvProfile } from '../types';
+import type { MerchantKind } from './merchant';
 
 export interface RawTxn {
   date: IsoDate;
@@ -17,10 +18,30 @@ export interface RawTxn {
   bankCategory?: string;
   pending?: boolean;
   account?: string;
+  /** Read from a PDF statement. */
+  source?: 'pdf';
+  /** The statement's own transaction type ("Purchase", "Transfer", "Fee"). */
+  bankType?: string;
+  /** What the transaction type says it is (a transfer, a fee, a card payment). */
+  kindHint?: MerchantKind;
+}
+
+/** What was read from a PDF statement, to show before importing. */
+export interface PdfSummary {
+  bank?: string;
+  /** Last 4 digits of each account in the file. */
+  accounts: string[];
+  /** Transaction tables read. */
+  tables: number;
+  /** Tables with a total line, and how many of those add up. */
+  checked: number;
+  matched: number;
+  from?: IsoDate;
+  to?: IsoDate;
 }
 
 export interface ParsedStatement {
-  format: 'csv' | 'ofx';
+  format: 'csv' | 'ofx' | 'pdf';
   txns: RawTxn[];
   /** Rows that had no date or amount (summary lines, blank amounts). */
   skippedRows: number;
@@ -31,6 +52,8 @@ export interface ParsedStatement {
   /** First time this CSV layout is seen: show how it was read before importing. */
   needsCheck: boolean;
   account?: string;
+  /** PDF only. */
+  pdf?: PdfSummary;
 }
 
 // ---------- CSV ----------
@@ -84,7 +107,7 @@ export function parseCsv(text: string, delim = detectDelimiter(text)): string[][
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
-function validDate(y: number, m: number, d: number): IsoDate | null {
+export function validDate(y: number, m: number, d: number): IsoDate | null {
   if (!(y >= 1990 && y <= 2100) || !(m >= 1 && m <= 12) || !(d >= 1 && d <= daysInMonth(y, m))) return null;
   return isoDate(msUTC(y, m, d));
 }
@@ -164,7 +187,7 @@ function detectOrder(values: string[]): CsvProfile['dateOrder'] {
   return 'mdy';
 }
 
-const MONEY_IN_HINT = /\b(payroll|direct dep|dir dep|salary|interest paid|interest earned|refund|transfer from|mobile deposit|deposit|payment received)\b|payment\W+thank you|thank you\W+(for your )?payment/i;
+export const MONEY_IN_HINT = /\b(payroll|direct dep|dir dep|salary|interest paid|interest earned|refund|transfer from|mobile deposit|deposit|payment received)\b|payment\W+thank you|thank you\W+(for your )?payment/i;
 
 /** Works out which column is which, and how money out is shown. */
 export function detectProfile(all: string[][]): { profile: CsvProfile; headers: string[]; rows: string[][] } | null {
@@ -324,7 +347,7 @@ export function parseStatement(text: string, saved: CsvProfile[] = []): ParsedSt
   }
   const all = parseCsv(text);
   const det = detectProfile(all);
-  if (!det) throw new Error("Couldn't find dates and amounts in this file. Download it from your bank as CSV, QFX or OFX (not PDF).");
+  if (!det) throw new Error("Couldn't find dates and amounts in this file. Pick your bank's PDF statement, or a CSV, QFX or OFX download.");
   const known = saved.find((p) => p.signature === det.profile.signature);
   const profile = known ?? det.profile;
   const { txns, skipped } = readCsvRows(det.rows, profile);

@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { fmtDow, fmtShort, parseISOToMs } from '../../engine/dates';
 import { fmtMoney, round2 } from '../../engine/money';
 import { fileTxn, linkTxn, reviewAgain, reviewTxns, skipTxn } from '../../engine/bank/importer';
+import { buildModel, predict, type Model } from '../../engine/bank/learn';
 import { describeMerchant } from '../../engine/bank/merchant';
 import { MISC_ID, type BankTxn } from '../../engine/types';
 import { openSheet } from '../../state/sheets';
-import { update, useActive } from '../../state/store';
+import { update, useActive, useStore } from '../../state/store';
 import { budgetOptions, displayName, type BudgetOption } from '../../state/spendingModels';
 import { Sheet } from '../components/Sheet';
 import { Amount, Note } from '../components/bits';
@@ -20,7 +21,10 @@ export function openReview() {
 
 function ReviewSheet({ onClose }: { onClose: () => void }) {
   const data = useActive();
+  const today = useStore((s) => s.today);
   const items = reviewTxns(data);
+  // Rebuilt as you file, so after one purchase from a store the others from it suggest the same budget first.
+  const model = useMemo(() => buildModel(data, today), [data, today]);
   const last = data.bank.lastImportAt;
   const skipped = data.bank.txns.filter((t) => t.status === 'skipped' && t.importedAt === last).sort((a, b) => b.date.localeCompare(a.date));
   return (
@@ -28,7 +32,7 @@ function ReviewSheet({ onClose }: { onClose: () => void }) {
       {items.length ? (
         <>
           <p className="sub">Pick a budget for each one. The app remembers your choice for that store and the amount, so it asks less over time.</p>
-          {items.map((t) => <ReviewItem key={t.id} t={t} />)}
+          {items.map((t) => <ReviewItem key={t.id} t={t} model={model} />)}
         </>
       ) : (
         <div className="empty"><IconCheckCircle /><div className="t">All caught up</div><div className="t-sm">Every imported purchase has a budget. You can still change one from Spending › History.</div></div>
@@ -50,22 +54,26 @@ function ReviewSheet({ onClose }: { onClose: () => void }) {
   );
 }
 
-function whyText(t: BankTxn, names: (id: string) => string): string {
-  const s = t.suggest || [];
-  const kind = describeMerchant(t.merchant).kind;
+const kindOfTxn = (t: BankTxn) => t.kind ?? describeMerchant(t.merchant).kind;
+
+function whyText(t: BankTxn, s: Array<{ extraId: string; p: number }>, names: (id: string) => string): string {
+  const kind = kindOfTxn(t);
+  if (kind === 'fee') return 'A fee from your bank, so the app always asks.';
   if (!s.length) return kind === 'atm' ? 'Cash from an ATM: where does it usually go?' : kind === 'p2p' ? 'A payment to a person, so the app always asks.' : 'First time at this store.';
   if (kind === 'gas' && s.length > 1 && s[1].p >= 0.2) return `At gas stations you've filed amounts like this under ${names(s[0].extraId)} and ${names(s[1].extraId)}.`;
   if (s.length > 1 && s[1].p >= 0.2) return `Usually ${names(s[0].extraId)}, sometimes ${names(s[1].extraId)}.`;
   return `Probably ${names(s[0].extraId)}.`;
 }
 
-function ReviewItem({ t }: { t: BankTxn }) {
+function ReviewItem({ t, model }: { t: BankTxn; model: Model }) {
   const data = useActive();
   const [mode, setMode] = useState<'pick' | 'more' | 'split' | 'skip'>('pick');
   const opts = budgetOptions(data).filter((o) => !o.archived);
   const names = (id: string) => displayName(data, id);
-  const suggested = (t.suggest || []).map((s) => s.extraId).filter((id) => opts.some((o) => o.id === id)).slice(0, 2);
   const amount = round2(Math.abs(t.amount));
+  const live = predict(model, { key: t.merchantKey, kind: kindOfTxn(t) }, amount, t.bankCategory).suggestions;
+  const guesses = live.length ? live : t.suggest || [];
+  const suggested = guesses.map((s) => s.extraId).filter((id) => opts.some((o) => o.id === id)).slice(0, 2);
   const refund = t.amount > 0;
   const maybe = t.maybeSameAs ? data.spendEntries.find((e) => e.id === t.maybeSameAs) : undefined;
   const now = () => new Date().toISOString();
@@ -77,7 +85,7 @@ function ReviewItem({ t }: { t: BankTxn }) {
         <span className="main-col"><span className="strong">{t.merchant}</span><span className="sub">{fmtDow(parseISOToMs(t.date))} · <span className="mono-ish">{t.description.slice(0, 60)}</span></span></span>
         <span className="trail"><Amount value={refund ? amount : -amount} signed tone={refund ? 'pos' : undefined} />{refund && <span className="sub">Refund</span>}</span>
       </div>
-      <p className="sub">{whyText(t, names)}</p>
+      <p className="sub">{whyText(t, guesses, names)}</p>
       {maybe && (
         <Note tone="info" action={<button type="button" className="btn sm ghost" onClick={() => update((d) => linkTxn(d, t.id, maybe.id), { undo: 'Matched to your log' })}>Yes, same purchase</button>}>
           Maybe the same as your {fmtShort(parseISOToMs(maybe.date))} log: {maybe.note || names(maybe.extraId)}, {fmtMoney(Math.abs(maybe.amount))} in {names(maybe.extraId)}.

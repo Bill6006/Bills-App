@@ -3,6 +3,7 @@ import { fmtRange, fmtShort, parseISOToMs } from '../../engine/dates';
 import { fmtMoney, round2 } from '../../engine/money';
 import { applyImport, planImport, type ImportPlan, type PlanItem } from '../../engine/bank/importer';
 import { parseStatement, readCsvRows, type ParsedStatement } from '../../engine/bank/statement';
+import { isPdfBytes } from '../../engine/bank/pdfItems';
 import { describeMerchant } from '../../engine/bank/merchant';
 import type { CsvProfile } from '../../engine/types';
 import { openSheet } from '../../state/sheets';
@@ -22,6 +23,11 @@ export function openBankImport() {
 
 type Step = { kind: 'choose' } | { kind: 'check'; parsed: ParsedStatement; fileName?: string } | { kind: 'preview'; parsed: ParsedStatement; plan: ImportPlan; profileToSave?: CsvProfile };
 
+async function looksLikePdf(f: File): Promise<boolean> {
+  if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') return true;
+  return isPdfBytes(new Uint8Array(await f.slice(0, 5).arrayBuffer()));
+}
+
 
 function BankImportSheet({ onClose }: { onClose: () => void }) {
   const data = useActive();
@@ -30,6 +36,7 @@ function BankImportSheet({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState('');
   const [paste, setPaste] = useState(false);
   const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const toPreview = (parsed: ParsedStatement, profileToSave?: CsvProfile) => {
@@ -45,6 +52,23 @@ function BankImportSheet({ onClose }: { onClose: () => void }) {
       setError((e as Error).message);
     }
   };
+  const readPdf = async (f: File) => {
+    setError('');
+    setBusy(true);
+    try {
+      const { readPdfStatement } = await import('../../engine/bank/pdfRead');
+      toPreview(await readPdfStatement(await f.arrayBuffer()));
+    } catch (e) {
+      const msg = (e as Error)?.message || '';
+      setError(/dynamically imported module|Failed to fetch|Importing a module/i.test(msg) ? "The PDF reader couldn't load. Check your connection and try again." : msg || "This PDF couldn't be read.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const onFile = async (f: File) => {
+    if (await looksLikePdf(f)) await readPdf(f);
+    else read(await f.text(), f.name);
+  };
 
   if (step.kind === 'check') {
     return <ColumnCheck parsed={step.parsed} onBack={() => setStep({ kind: 'choose' })} onClose={onClose}
@@ -56,7 +80,7 @@ function BankImportSheet({ onClose }: { onClose: () => void }) {
   }
 
   if (step.kind === 'preview') {
-    return <Preview plan={step.plan} onBack={() => setStep({ kind: 'choose' })} onClose={onClose}
+    return <Preview plan={step.plan} parsed={step.parsed} onBack={() => setStep({ kind: 'choose' })} onClose={onClose}
       onImport={() => {
         const n = (a: string) => step.plan.items.filter((i) => i.action === a).length;
         const review = n('review');
@@ -72,10 +96,10 @@ function BankImportSheet({ onClose }: { onClose: () => void }) {
 
   return (
     <Sheet title="Import from your bank" onClose={onClose}>
-      <p className="sub body">On your bank's website or app, find <b>Download transactions</b> (sometimes under Statements or Export) and choose <b>CSV</b>, <b>QFX</b> or <b>OFX</b>. Then pick that file here. A PDF statement won't work.</p>
-      <input ref={fileRef} type="file" accept=".csv,.qfx,.ofx,.txt,text/csv,text/plain,application/x-ofx,application/vnd.intu.qfx,application/octet-stream" hidden
-        onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) read(await f.text(), f.name); }} />
-      <button type="button" className="btn block" onClick={() => fileRef.current?.click()}><IconFile />Choose file</button>
+      <p className="sub body">Download your <b>monthly statement (PDF)</b> from your bank's app or website, or, if your bank offers it, <b>Download transactions</b> as <b>CSV</b>, <b>QFX</b> or <b>OFX</b>. Then pick that file here.</p>
+      <input ref={fileRef} type="file" accept=".pdf,application/pdf,.csv,.qfx,.ofx,.txt,text/csv,text/plain,application/x-ofx,application/vnd.intu.qfx,application/octet-stream" hidden
+        onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) await onFile(f); }} />
+      <button type="button" className="btn block" disabled={busy} onClick={() => fileRef.current?.click()}><IconFile />{busy ? 'Reading your statement…' : 'Choose file'}</button>
       {!paste
         ? <button type="button" className="btn ghost block" onClick={() => setPaste(true)}><IconPaste />Paste text instead</button>
         : (
@@ -143,8 +167,9 @@ function ColumnCheck({ parsed, onOk, onBack, onClose }: { parsed: ParsedStatemen
 
 // ---------- preview ----------
 
-function Preview({ plan, onImport, onBack, onClose }: { plan: ImportPlan; onImport: () => void; onBack: () => void; onClose: () => void }) {
+function Preview({ plan, parsed, onImport, onBack, onClose }: { plan: ImportPlan; parsed: ParsedStatement; onImport: () => void; onBack: () => void; onClose: () => void }) {
   const data = useActive();
+  const pdf = parsed.pdf;
   const log = plan.items.filter((i) => i.action === 'log');
   const match = plan.items.filter((i) => i.action === 'match');
   const review = plan.items.filter((i) => i.action === 'review');
@@ -160,6 +185,13 @@ function Preview({ plan, onImport, onBack, onClose }: { plan: ImportPlan; onImpo
   return (
     <Sheet title="Ready to import" eyebrow={plan.from && plan.to ? fmtRange(parseISOToMs(plan.from), parseISOToMs(plan.to)) : 'Bank import'} onClose={onClose}
       footer={<><button type="button" className="btn ghost" onClick={onBack}>Back</button><button type="button" className="btn" disabled={nothing} onClick={onImport}>{nothing ? 'Nothing new' : `Import ${plan.items.length}`}</button></>}>
+      {pdf && (
+        pdf.checked > 0 && pdf.matched === pdf.checked
+          ? <Note tone="ok">Read {parsed.txns.length} transactions from your {pdf.bank ? `${pdf.bank} ` : ''}statement{pdf.accounts.length > 1 ? ` (${pdf.accounts.length} accounts: ${pdf.accounts.map((a) => `…${a}`).join(', ')})` : ''}. They add up to the statement's own totals.</Note>
+          : pdf.checked > 0
+            ? <Note tone="warn">Read {parsed.txns.length} transactions, but {pdf.checked - pdf.matched} of the statement's totals don't match what was read, so a line may have been missed or misread. Look over the list before importing.</Note>
+            : <Note tone="info">Read {parsed.txns.length} transactions from this PDF. It has no totals to check them against, so look over the list before importing.</Note>
+      )}
       <div className="card">
         <dl className="kv">
           <dt>Filed into budgets</dt><dd>{log.length}</dd>
@@ -179,7 +211,7 @@ function Preview({ plan, onImport, onBack, onClose }: { plan: ImportPlan; onImpo
             {[...byBudget.entries()].map(([id, g]) => (
               <div key={id} className="row no-lead">
                 <span className="main-col"><span className="title">{displayName(data, id)}</span><span className="sub">{g.items.slice(0, 4).map((i) => i.txn.merchant).join(', ')}{g.items.length > 4 ? ` +${g.items.length - 4}` : ''}</span></span>
-                <span className="trail"><Amount value={g.total} /><span className="sub">{g.items.length} purchase{g.items.length === 1 ? '' : 's'}</span></span>
+                <span className="trail"><Amount value={g.total} /><span className="sub">{countText(g.items)}</span></span>
               </div>
             ))}
           </div>
@@ -200,6 +232,11 @@ function Preview({ plan, onImport, onBack, onClose }: { plan: ImportPlan; onImpo
       {review.length > 0 && <p className="sub">You'll pick budgets for the {review.length} that need a look right after importing. You can change any of them later.</p>}
     </Sheet>
   );
+}
+
+function countText(items: PlanItem[]): string {
+  const refunds = items.filter((i) => i.refund).length, buys = items.length - refunds;
+  return [buys ? `${buys} purchase${buys === 1 ? '' : 's'}` : '', refunds ? `${refunds} refund${refunds === 1 ? '' : 's'}` : ''].filter(Boolean).join(', ');
 }
 
 function TxnLine({ item, right }: { item: PlanItem; right: React.ReactNode }) {

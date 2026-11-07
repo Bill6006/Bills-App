@@ -29,7 +29,8 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,woff2,png,svg,webmanifest}'],
+        // .mjs is the PDF reader's worker, so statements can be read offline too.
+        globPatterns: ['**/*.{js,mjs,css,html,woff2,png,svg,webmanifest}'],
         // Only the Latin font subsets are needed offline; other scripts fall back to system fonts.
         globIgnores: ['**/*-{cyrillic,cyrillic-ext,greek,vietnamese,math,symbols}-*.woff2'],
         navigateFallback: 'index.html',

@@ -21,13 +21,14 @@ Tap any big number to see how it was worked out. **What-if mode** (Plan or Setti
 
 ## Spending from your bank
 
-Instead of logging each purchase, download your transactions from your bank (CSV, QFX or OFX; not PDF) and import the file under **Spending › Import from your bank**.
+Instead of logging each purchase, import your bank's monthly **PDF statement** (for banks like Chime that only offer PDFs) or a transactions download (**CSV**, **QFX** or **OFX**) under **Spending › Import from your bank**.
 
 - **It files purchases for you** when it's sure, using your own history: the stores you've used and the amounts. At a gas station a fill-up goes to Gas and a snack to Groceries, and amounts in between are left for you to pick. Every correction teaches it; a store can also be set to always use one budget, always ask, or always skip (**Plan › Bank import**).
 - **To review** holds the rest: one tap for a suggested budget, **Split** to divide one purchase across budgets, or **Not spending**.
 - **Not spending is skipped**: transfers between your accounts, your paycheck, card payments and bills that are already in your plan.
 - **Nothing is counted twice**: transactions from earlier imports are recognized (the bank's id in QFX/OFX; date, amount and text in CSV, with identical same-day purchases kept apart), the same purchase from a CSV and a QFX is matched, purchases you logged by hand are linked instead of added, and pending charges wait until they post. A whole import can be removed again.
 - The first CSV from a bank shows how its columns were read so you can correct them once; after that the layout is remembered.
+- **PDF statements** are read from their transaction tables: the column headings say which text is the date, description, type and amount, a table that continues on the next page is followed, and the store's bank text printed under its name is kept. Money in or out comes from the transaction type (Purchase, Refund, Fee, Transfer), money in / money out columns, the section (Deposits, Withdrawals) or the kind of account (a card or a bank account). Every table with a total line is checked against it, and the preview says whether everything added up. Scanned (picture-only) PDFs can't be read. The PDF reader ([pdf.js](https://mozilla.github.io/pdf.js/)) loads only when a PDF is picked and is cached for offline use.
 
 ## Loans update themselves
 

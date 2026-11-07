@@ -16,7 +16,7 @@ import { round2 } from '../money';
 import { occurrencesForRange } from '../schedule';
 import { MISC_ID, type AppData, type BankTxn, type SpendEntry } from '../types';
 import { buildModel, predict, type Model, type Prediction } from './learn';
-import { describeMerchant, sameStore, type MerchantInfo } from './merchant';
+import { describeMerchant, sameStore, type MerchantInfo, type MerchantKind } from './merchant';
 import type { ParsedStatement, RawTxn } from './statement';
 
 export type ItemAction = 'log' | 'review' | 'skip' | 'match';
@@ -53,21 +53,41 @@ export function txnIds(txns: RawTxn[]): string[] {
   const seen = new Map<string, number>();
   return txns.map((t) => {
     if (t.fitid) return `ofx:${t.account || ''}:${t.fitid}`;
-    const base = `${t.date}|${t.flow.toFixed(2)}|${t.description.toLowerCase().replace(/\s+/g, ' ').trim()}`;
+    const text = (t.source === 'pdf' ? `${t.account || ''}|${t.description}|${t.memo || ''}` : t.description).toLowerCase().replace(/\s+/g, ' ').trim();
+    const base = `${t.source || 'csv'}|${t.date}|${t.flow.toFixed(2)}|${text}`;
     const k = seen.get(base) || 0;
     seen.set(base, k + 1);
-    return `csv:${fnv(base)}:${k}`;
+    // CSV ids keep their original form so files imported before PDFs were supported are still recognized.
+    return t.source === 'pdf' ? `pdf:${fnv(base)}:${k}` : `csv:${fnv(base.slice(4))}:${k}`;
   });
 }
 
-interface Ctx { data: AppData; model: Model; today: IsoDate; billNames: Array<{ key: string; name: string; amount: number }>; usedEntries: Set<string> }
+const STRUCTURAL: MerchantKind[] = ['transfer', 'cardPayment', 'payroll', 'interest'];
+
+/** Store, key and kind for a transaction: its text, the second line when the first names no store, and what the
+ *  statement's transaction type says (a transfer is a transfer whatever its text). */
+export function merchantOf(t: RawTxn): MerchantInfo {
+  let m = describeMerchant(t.memo && /^(pos|debit|purchase|card)\b/i.test(t.description) ? `${t.description} ${t.memo}` : t.description);
+  if (t.memo && !m.key && !m.kind) {
+    const alt = describeMerchant(t.memo);
+    if (alt.key || alt.kind) m = alt;
+  }
+  const hint = t.kindHint;
+  if (!hint || hint === m.kind) return m;
+  if (STRUCTURAL.includes(hint)) return { ...m, kind: hint, key: m.known ? m.key : hint };
+  if (hint === 'fee') return m.kind === 'atm' ? { name: 'ATM fee', key: 'atmfee', kind: 'fee', known: false } : { ...m, kind: 'fee' };
+  if (hint === 'atm' && !m.kind) return { name: 'ATM withdrawal', key: 'atm', kind: 'atm', known: false };
+  return m;
+}
+
+interface Ctx { data: AppData; model: Model; today: IsoDate; billNames: Array<{ key: string; known: boolean; name: string; amount: number }>; usedEntries: Set<string> }
 
 function billMatch(ctx: Ctx, t: RawTxn, m: MerchantInfo): string | null {
-  const words = ` ${m.key} ${t.description.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ')} `;
+  const words = ` ${m.key} ${`${t.description} ${t.memo || ''}`.toLowerCase().replace(/['’]/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ')} `;
   const amt = round2(-t.flow);
   // The bill's name in the text and a similar amount (bills like electric vary, but not tenfold).
   for (const b of ctx.billNames) {
-    if (b.key.length < 4 || !(sameStore(b.key, m.key) || words.includes(` ${b.key} `))) continue;
+    if ((b.key.length < 4 && !b.known) || !(sameStore(b.key, m.key) || words.includes(` ${b.key} `))) continue;
     if (!(b.amount > 0) || (amt >= b.amount * 0.5 && amt <= b.amount * 2)) return b.name;
   }
   // Same amount within a few days of a bill's date.
@@ -86,7 +106,8 @@ function findManualLog(ctx: Ctx, t: RawTxn, m: MerchantInfo, refund: boolean): {
     const dd = dayDiff(t.date, e.date); // the bank usually posts on or after the day you logged it
     if (dd < -2 || dd > 5) continue;
     const noteStore = describeMerchant(e.note || '');
-    const storeOk = !noteStore.key || sameStore(noteStore.key, m.key) || (!!noteStore.kind && noteStore.kind === m.kind);
+    // A note without a store name ("gas") fits any store; "gas station food" fits any gas station.
+    const storeOk = !noteStore.key || sameStore(noteStore.key, m.key) || (noteStore.kind === 'gas' && m.kind === 'gas');
     const exact = Math.abs(Math.abs(e.amount) - amt) < 0.005;
     if (exact && storeOk) { if (Math.abs(dd) < bestSure) { sure = e; bestSure = Math.abs(dd); } }
     else if ((exact || (sameStore(noteStore.key, m.key) && Math.abs(Math.abs(e.amount) - amt) <= amt * 0.25)) && Math.abs(dd) < bestMaybe) { maybe = e; bestMaybe = Math.abs(dd); }
@@ -96,14 +117,16 @@ function findManualLog(ctx: Ctx, t: RawTxn, m: MerchantInfo, refund: boolean): {
 
 function baseTxn(id: string, t: RawTxn, m: MerchantInfo): BankTxn {
   return {
-    id, date: t.date, amount: round2(t.flow), description: t.memo && /^(pos|debit|purchase|card)\b/i.test(t.description) ? `${t.description} ${t.memo}` : t.description,
-    merchant: m.name || t.description.slice(0, 40), merchantKey: m.key, bankCategory: t.bankCategory, account: t.account,
+    id, date: t.date, amount: round2(t.flow),
+    // A PDF's second line is the bank's own text for the store (the first is its tidied name).
+    description: t.memo && (t.source === 'pdf' || /^(pos|debit|purchase|card)\b/i.test(t.description)) ? (t.source === 'pdf' ? t.memo : `${t.description} ${t.memo}`) : t.description,
+    merchant: m.name || t.description.slice(0, 40), merchantKey: m.key, ...(m.kind ? { kind: m.kind } : {}), bankCategory: t.bankCategory, account: t.account,
     status: 'review', how: '', entryIds: [], importedAt: '',
   };
 }
 
 function classify(ctx: Ctx, id: string, t: RawTxn): PlanItem {
-  const m = describeMerchant(t.memo && /^(pos|debit|purchase|card)\b/i.test(t.description) ? `${t.description} ${t.memo}` : t.description);
+  const m = merchantOf(t);
   const txn = baseTxn(id, t, m);
   const skip = (how: string): PlanItem => ({ txn: { ...txn, status: 'skipped', how }, action: 'skip', refund: false });
   const rule = m.key ? ctx.data.bank.rules.find((r) => sameStore(r.key, m.key)) : undefined;
@@ -146,7 +169,7 @@ export function planImport(data: AppData, parsed: ParsedStatement, today: IsoDat
   const billNames = [
     ...data.bills.map((b) => ({ name: b.name, amount: Number(b.amount) || 0 })),
     ...data.debts.map((x) => ({ name: x.name, amount: round2(Number(x.minPayment || 0) + Number(x.extraPayment || 0)) })),
-  ].map((b) => ({ ...b, key: describeMerchant(b.name).key })).filter((b) => b.key);
+  ].map((b) => { const info = describeMerchant(b.name); return { ...b, key: info.key, known: info.known }; }).filter((b) => b.key);
   const ctx: Ctx = { data, model, today, billNames, usedEntries: new Set() };
   const known = new Set(data.bank.txns.map((t) => t.id));
   const ids = txnIds(parsed.txns);
@@ -157,7 +180,7 @@ export function planImport(data: AppData, parsed: ParsedStatement, today: IsoDat
     const id = ids[i];
     if (known.has(id)) { alreadyImported++; return; }
     // Same transaction from the other file type (CSV vs QFX/OFX).
-    const key = describeMerchant(t.description).key;
+    const key = merchantOf(t).key;
     const crossFormat = data.bank.txns.some((o) => format(o.id) !== format(id) && Math.abs(o.amount - t.flow) < 0.005 && Math.abs(dayDiff(o.date, t.date)) <= 3 && (!key || !o.merchantKey || sameStore(o.merchantKey, key)));
     if (crossFormat) { alreadyImported++; return; }
     items.push(classify(ctx, id, t));

@@ -8,3 +8,6 @@ coverage/
 local/
 *.local.json
 bills-account-planner*.json
+# Never commit bank statements
+*.pdf
+*.PDF
