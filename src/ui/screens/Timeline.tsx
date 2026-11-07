@@ -35,7 +35,15 @@ export function Timeline({ monthParam }: { monthParam?: string }) {
       setTodayAbove(en.boundingClientRect.top < 0);
     }, { rootMargin: '-80px 0px -90px 0px' });
     io.observe(el);
-    return () => io.disconnect();
+    // A fast fling can jump today from above the screen to below it without it ever being on screen,
+    // which the observer doesn't report; keep the arrow's direction right on every scroll.
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => { frame = 0; setTodayAbove(el.getBoundingClientRect().top < 0); });
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => { io.disconnect(); window.removeEventListener('scroll', onScroll); if (frame) window.cancelAnimationFrame(frame); };
   }, [groups]);
 
   // Land on today the first time the current month opens.
@@ -83,7 +91,7 @@ export function Timeline({ monthParam }: { monthParam?: string }) {
 
       {(!todayVisible || mk !== todayMk || !hasToday) && (
         <button type="button" className="floating-pill" onClick={goToday}>
-          {mk === todayMk && hasToday && todayAbove ? <IconArrowUp /> : mk < todayMk ? <IconArrowDown /> : <IconArrowUp />}Today
+          {(mk === todayMk && hasToday ? !todayAbove : mk < todayMk) ? <IconArrowDown /> : <IconArrowUp />}Today
         </button>
       )}
     </div>
