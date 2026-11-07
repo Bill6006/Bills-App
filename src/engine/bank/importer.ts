@@ -97,22 +97,32 @@ function billMatch(ctx: Ctx, t: RawTxn, m: MerchantInfo): string | null {
   return null;
 }
 
-/** A log you entered yourself for this same purchase (exact amount, within a few days). */
+/**
+ * A log you entered yourself for this same purchase.
+ *  - sure (linked without asking): the exact amount, the same store or a note naming none, within a few days;
+ *  - maybe (you're asked): within a few days, the exact amount at another store or the same store at a close
+ *    amount (a tip); or the exact amount at the same store logged up to two weeks away from the bank's date
+ *    (a purchase logged days later, dated the day it was logged).
+ */
 function findManualLog(ctx: Ctx, t: RawTxn, m: MerchantInfo, refund: boolean): { sure?: SpendEntry; maybe?: SpendEntry } {
   const amt = round2(Math.abs(t.flow));
-  let sure: SpendEntry | undefined, maybe: SpendEntry | undefined, bestSure = 99, bestMaybe = 99;
+  let sure: SpendEntry | undefined, maybe: SpendEntry | undefined, late: SpendEntry | undefined;
+  let bestSure = 99, bestMaybe = 99, bestLate = 99;
   for (const e of ctx.data.spendEntries) {
     if (e.bankTxnId || ctx.usedEntries.has(e.id) || (e.amount < 0) !== refund) continue;
-    const dd = dayDiff(t.date, e.date); // the bank usually posts on or after the day you logged it
-    if (dd < -2 || dd > 5) continue;
+    const dd = dayDiff(t.date, e.date);
+    const ad = Math.abs(dd);
+    if (ad > 14) continue;
+    const near = dd >= -2 && dd <= 5; // the bank usually posts on or after the day you logged it
     const noteStore = describeMerchant(e.note || '');
     // A note without a store name ("gas") fits any store; "gas station food" fits any gas station.
     const storeOk = !noteStore.key || sameStore(noteStore.key, m.key) || (noteStore.kind === 'gas' && m.kind === 'gas');
     const exact = Math.abs(Math.abs(e.amount) - amt) < 0.005;
-    if (exact && storeOk) { if (Math.abs(dd) < bestSure) { sure = e; bestSure = Math.abs(dd); } }
-    else if ((exact || (sameStore(noteStore.key, m.key) && Math.abs(Math.abs(e.amount) - amt) <= amt * 0.25)) && Math.abs(dd) < bestMaybe) { maybe = e; bestMaybe = Math.abs(dd); }
+    if (near && exact && storeOk) { if (ad < bestSure) { sure = e; bestSure = ad; } }
+    else if (near && (exact || (sameStore(noteStore.key, m.key) && Math.abs(Math.abs(e.amount) - amt) <= amt * 0.25))) { if (ad < bestMaybe) { maybe = e; bestMaybe = ad; } }
+    else if (exact && storeOk && ad < bestLate) { late = e; bestLate = ad; }
   }
-  return { sure, maybe };
+  return { sure, maybe: maybe ?? late };
 }
 
 function baseTxn(id: string, t: RawTxn, m: MerchantInfo): BankTxn {

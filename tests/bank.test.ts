@@ -275,6 +275,18 @@ describe('importing', () => {
     expect(tb.txn.maybeSameAs).toBe('mine');
   });
 
+  it('asks about a log of yours dated days away from the purchase, and leaves older ones alone', () => {
+    const d = sampleData();
+    d.spendEntries.push({ id: 'late', extraId: 'groc', extraName: 'Groceries', amount: 52.37, entryType: 'spend', date: '2026-11-12', note: 'walmart', createdAt: '' });
+    d.spendEntries.push({ id: 'old', extraId: 'ff', extraName: 'Fast Food', amount: 12.48, entryType: 'spend', date: '2026-10-15', note: 'taco bell', createdAt: '' });
+    const { plan } = doImport(d, CHASE_CHECKING);
+    const wm = plan.items.find((i) => /WAL-MART/.test(i.txn.description))!;
+    expect(wm).toMatchObject({ action: 'review' });
+    expect(wm.txn.maybeSameAs).toBe('late');
+    const tb = plan.items.find((i) => /TACO BELL/.test(i.txn.description))!;
+    expect(tb.txn.maybeSameAs).toBeUndefined();
+  });
+
   it('recognizes the same purchases downloaded once as CSV and once as QFX', () => {
     const d = sampleData();
     doImport(d, CHASE_CHECKING);
