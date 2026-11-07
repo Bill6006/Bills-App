@@ -23,6 +23,8 @@ export function Timeline({ monthParam }: { monthParam?: string }) {
   const density = data.prefs.timelineDensity;
   const groups = useMemo(() => timelineModel(engine, mk, group, density), [engine, mk, group, density]);
   const todayRef = useRef<HTMLDivElement>(null);
+  const headRef = useRef<HTMLElement>(null);
+  const [headVisible, setHeadVisible] = useState(true);
   const [todayVisible, setTodayVisible] = useState(true);
   const [todayAbove, setTodayAbove] = useState(false);
   const hasToday = groups.some((g) => g.days.some((d) => d.isToday));
@@ -61,12 +63,23 @@ export function Timeline({ monthParam }: { monthParam?: string }) {
     } else todayRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
+  // While the page's header is on screen, "Today" sits with the controls; once it scrolls away it floats at the top.
+  useEffect(() => {
+    const el = headRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(([en]) => setHeadVisible(en.isIntersecting));
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  const needToday = !todayVisible || mk !== todayMk || !hasToday;
+  const todayArrow = (mk === todayMk && hasToday ? !todayAbove : mk < todayMk) ? <IconArrowDown /> : <IconArrowUp />;
+
   const setPref = (k: 'timelineGroup' | 'timelineDensity', v: string) => update((d) => { (d.prefs as unknown as Record<string, string>)[k] = v; }, { real: true });
   const prevMk = addMonthsKey(mk, -1), nextMk = addMonthsKey(mk, 1);
 
   return (
     <div className="page timeline">
-      <header className="page-head">
+      <header className="page-head" ref={headRef}>
         <div className="titles">
           <div className="eyebrow">Timeline</div>
           <h1 className="page-title">{fmtMonthLong(mk)}</h1>
@@ -81,6 +94,7 @@ export function Timeline({ monthParam }: { monthParam?: string }) {
         <Segmented label="Group by" value={group} onChange={(v) => setPref('timelineGroup', v)} options={[{ value: 'period', label: 'Pay periods' }, { value: 'month', label: 'Month' }]} />
         <label className="inline-switch"><Switch label="Show every day" checked={density === 'all'} onChange={(v) => setPref('timelineDensity', v ? 'all' : 'activity')} /><span>Every day</span></label>
         <button type="button" className="btn ghost sm" onClick={() => openMonthDetails(engine, mk)}><IconInfo />Month details</button>
+        {needToday && headVisible && <button type="button" className="btn ghost sm" onClick={goToday}>{todayArrow}Today</button>}
       </div>
 
       <div className="tl-table-head" aria-hidden="true">
@@ -89,11 +103,7 @@ export function Timeline({ monthParam }: { monthParam?: string }) {
 
       {groups.map((g) => <Group key={g.key} g={g} engine={engine} todayRef={todayRef} cushion={engine.settings.cushion} />)}
 
-      {(!todayVisible || mk !== todayMk || !hasToday) && (
-        <button type="button" className="floating-pill" onClick={goToday}>
-          {(mk === todayMk && hasToday ? !todayAbove : mk < todayMk) ? <IconArrowDown /> : <IconArrowUp />}Today
-        </button>
-      )}
+      {needToday && !headVisible && <button type="button" className="floating-pill" onClick={goToday}>{todayArrow}Today</button>}
     </div>
   );
 }
