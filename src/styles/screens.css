@@ -69,6 +69,10 @@ button.legend-row:hover span:nth-child(2) { text-decoration: underline; text-dec
 .tl-group-head { display: flex; align-items: flex-start; gap: 8px; padding: 6px 4px 0; }
 .tl-group-title { font-size: 15px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tl-group-head .sub { margin-top: 2px; line-height: 1.5; }
+.tl-group-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+.tl-group-side:empty { display: none; }
+.tl-today { transition: opacity var(--dur-2) var(--ease-out); }
+.tl-today.off { opacity: 0; pointer-events: none; }
 .tl-row .tl-amt, .tl-row .tl-sav { display: none; }
 .tl-row .tl-amt-m { display: block; }
 .tl-row.cont { border-top-color: transparent !important; padding-top: 4px; }

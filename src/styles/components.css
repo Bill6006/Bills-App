@@ -377,7 +377,8 @@ button.row:active { background: var(--surface-2); }
 .empty svg { width: 28px; height: 28px; color: var(--faint); }
 .empty .t { font-weight: 800; color: var(--text-2); }
 
-/* "Today" on the Timeline: centered at the top, clear of the amounts and of the toasts at the bottom. */
+/* "Today" on the Timeline once its spot by the first heading has scrolled away: centered at the top, clear of the
+   amounts and of the toasts at the bottom. It stays in the page and fades in and out. */
 .floating-pill {
   position: fixed; z-index: 35;
   top: calc(var(--safe-t) + 12px); left: 0; right: 0; margin: 0 auto; width: max-content;
@@ -386,11 +387,12 @@ button.row:active { background: var(--surface-2); }
   background: var(--text); color: var(--bg);
   font-weight: 850; font-size: 12.5px;
   box-shadow: 0 12px 28px -10px rgba(0, 0, 0, .55);
-  animation: pill-in var(--dur-3) var(--ease-out) both;
+  opacity: 0; transform: translateY(-10px) scale(.97); pointer-events: none;
+  transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-2) var(--ease-out);
 }
+.floating-pill.shown { opacity: 1; transform: none; pointer-events: auto; }
 .floating-pill svg { width: 15px; height: 15px; stroke-width: 2.4; }
 .main.has-banner .floating-pill { top: calc(var(--safe-t) + var(--banner-h, 54px) + 10px); }
-@keyframes pill-in { from { opacity: 0; transform: translateY(-8px) scale(.98); } to { opacity: 1; transform: none; } }
 @media (min-width: 1024px) {
   .floating-pill { top: 20px; left: var(--sidebar-w); }
   .main.has-banner .floating-pill { top: calc(var(--banner-h, 54px) + 20px); }

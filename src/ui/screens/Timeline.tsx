@@ -23,8 +23,8 @@ export function Timeline({ monthParam }: { monthParam?: string }) {
   const density = data.prefs.timelineDensity;
   const groups = useMemo(() => timelineModel(engine, mk, group, density), [engine, mk, group, density]);
   const todayRef = useRef<HTMLDivElement>(null);
-  const headRef = useRef<HTMLElement>(null);
-  const [headVisible, setHeadVisible] = useState(true);
+  const todayBtnRef = useRef<HTMLButtonElement>(null);
+  const [todayBtnVisible, setTodayBtnVisible] = useState(true);
   const [todayVisible, setTodayVisible] = useState(true);
   const [todayAbove, setTodayAbove] = useState(false);
   const hasToday = groups.some((g) => g.days.some((d) => d.isToday));
@@ -63,14 +63,15 @@ export function Timeline({ monthParam }: { monthParam?: string }) {
     } else todayRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
-  // While the page's header is on screen, "Today" sits with the controls; once it scrolls away it floats at the top.
+  // "Today" sits at the right of the first section's heading; once that scrolls off screen, the same button floats
+  // at the top. Both stay in the page and fade, so nothing shifts while scrolling.
   useEffect(() => {
-    const el = headRef.current;
-    if (!el) return;
-    const io = new IntersectionObserver(([en]) => setHeadVisible(en.isIntersecting));
+    const el = todayBtnRef.current;
+    if (!el) { setTodayBtnVisible(false); return; }
+    const io = new IntersectionObserver(([en]) => setTodayBtnVisible(en.isIntersecting));
     io.observe(el);
     return () => io.disconnect();
-  }, []);
+  }, [groups]);
   const needToday = !todayVisible || mk !== todayMk || !hasToday;
   const todayArrow = (mk === todayMk && hasToday ? !todayAbove : mk < todayMk) ? <IconArrowDown /> : <IconArrowUp />;
 
@@ -79,7 +80,7 @@ export function Timeline({ monthParam }: { monthParam?: string }) {
 
   return (
     <div className="page timeline">
-      <header className="page-head" ref={headRef}>
+      <header className="page-head">
         <div className="titles">
           <div className="eyebrow">Timeline</div>
           <h1 className="page-title">{fmtMonthLong(mk)}</h1>
@@ -94,21 +95,27 @@ export function Timeline({ monthParam }: { monthParam?: string }) {
         <Segmented label="Group by" value={group} onChange={(v) => setPref('timelineGroup', v)} options={[{ value: 'period', label: 'Pay periods' }, { value: 'month', label: 'Month' }]} />
         <label className="inline-switch"><Switch label="Show every day" checked={density === 'all'} onChange={(v) => setPref('timelineDensity', v ? 'all' : 'activity')} /><span>Every day</span></label>
         <button type="button" className="btn ghost sm" onClick={() => openMonthDetails(engine, mk)}><IconInfo />Month details</button>
-        {needToday && headVisible && <button type="button" className="btn ghost sm" onClick={goToday}>{todayArrow}Today</button>}
       </div>
 
       <div className="tl-table-head" aria-hidden="true">
         <span>Date</span><span>What</span><span className="right">Amount</span><span className="right">Bills account</span><span className="right">Savings</span>
       </div>
 
-      {groups.map((g) => <Group key={g.key} g={g} engine={engine} todayRef={todayRef} cushion={engine.settings.cushion} />)}
+      {groups.map((g, i) => (
+        <Group key={g.key} g={g} engine={engine} todayRef={todayRef} cushion={engine.settings.cushion}
+          side={i === 0 ? (
+            <button type="button" ref={todayBtnRef} className={`btn ghost sm tl-today${needToday ? '' : ' off'}`} onClick={goToday}
+              aria-hidden={!needToday} tabIndex={needToday ? 0 : -1}>{todayArrow}Today</button>
+          ) : undefined} />
+      ))}
 
-      {needToday && !headVisible && <button type="button" className="floating-pill" onClick={goToday}>{todayArrow}Today</button>}
+      <button type="button" className={`floating-pill${needToday && !todayBtnVisible ? ' shown' : ''}`} onClick={goToday}
+        aria-hidden={!(needToday && !todayBtnVisible)} tabIndex={needToday && !todayBtnVisible ? 0 : -1}>{todayArrow}Today</button>
     </div>
   );
 }
 
-function Group({ g, engine, todayRef, cushion }: { g: TimelineGroup; engine: PlanEngine; todayRef: React.RefObject<HTMLDivElement | null>; cushion: number }) {
+function Group({ g, engine, todayRef, cushion, side }: { g: TimelineGroup; engine: PlanEngine; todayRef: React.RefObject<HTMLDivElement | null>; cushion: number; side?: React.ReactNode }) {
   const p = g.payday;
   return (
     <section className="tl-group">
@@ -121,8 +128,11 @@ function Group({ g, engine, todayRef, cushion }: { g: TimelineGroup; engine: Pla
             {p && p.planned > 0 && <> · <button type="button" className="tap-text" onClick={() => openWhy(engine, { kind: 'free', paydayMs: p.ms })}>{fmtMoney(p.free)} free after budgets</button></>}
           </div>
         </div>
-        {p?.minimum && <Chip tone="warn">Under minimum</Chip>}
-        {g.lowest && g.lowest.amount < cushion - 0.009 && <Chip tone="bad">Below cushion</Chip>}
+        <div className="tl-group-side">
+          {side}
+          {p?.minimum && <Chip tone="warn">Under minimum</Chip>}
+          {g.lowest && g.lowest.amount < cushion - 0.009 && <Chip tone="bad">Below cushion</Chip>}
+        </div>
       </div>
       <div className="card flush tl-list">
         {g.days.length === 0 && <p className="sub pad">No money moves in this period.</p>}
