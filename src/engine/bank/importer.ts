@@ -319,10 +319,12 @@ export function skipTxn(d: AppData, txnId: string, always = false) {
 }
 
 /**
- * It's one of your bills, not spending. Pass a new bill to add it to your bills as well. The bank's text is
- * remembered for that bill, so the next charge like it is recognized even when its amount differs from the plan's.
+ * It's one of your bills, not spending. Pass a new bill to add it to your bills as well. Options:
+ *  - updateAmount: the bill now costs this much (the plan's amount changes);
+ *  - extraTo: a one-time extra; the plan's amount is the bill and what's above it is spending in this budget.
+ * The bank's text is remembered for the bill, so the next charge like it is recognized on its own.
  */
-export function markAsBill(d: AppData, txnId: string, bill: string | RecurringItem, opts: { updateAmount?: boolean } = {}): boolean {
+export function markAsBill(d: AppData, txnId: string, bill: string | RecurringItem, opts: { updateAmount?: boolean; extraTo?: string } = {}, nowIso = ''): boolean {
   const t = txnOf(d, txnId);
   if (!t) return false;
   let b: RecurringItem | undefined;
@@ -334,15 +336,25 @@ export function markAsBill(d: AppData, txnId: string, bill: string | RecurringIt
   } else b = d.bills.find((x) => x.id === bill.id);
   if (!b) return false;
   const amount = round2(Math.abs(t.amount));
+  const planned = round2(Number(b.amount) || 0);
   if (opts.updateAmount) b.amount = amount;
   clearEntries(d, t);
-  t.status = 'skipped';
   t.how = `bill:${b.name}`;
   t.billId = b.id;
   delete t.maybeSameAs;
   delete t.billGuess;
+  const extra = opts.extraTo && !opts.updateAmount ? round2(amount - planned) : 0;
+  if (extra > 0) {
+    const note = t.merchant.toLowerCase() === b.name.toLowerCase() ? `${t.merchant}: extra over the bill` : `${t.merchant}: extra over the ${b.name} bill`;
+    const e = makeEntry(d, t, opts.extraTo!, extra, false, nowIso, note);
+    d.spendEntries.push(e);
+    t.entryIds = [e.id];
+    t.status = 'logged';
+  } else t.status = 'skipped';
+  // Remember the usual amount after a one-time extra, so a charge that size again is asked about.
   const text = billPhrase(t.description);
-  if (text) d.bank.billLinks = [...(d.bank.billLinks || []).filter((l) => !(l.text === text && l.billId === b!.id)), { billId: b.id, text, amount }];
+  const remember = extra > 0 ? planned : amount;
+  if (text) d.bank.billLinks = [...(d.bank.billLinks || []).filter((l) => !(l.text === text && l.billId === b!.id)), { billId: b.id, text, amount: remember }];
   return true;
 }
 

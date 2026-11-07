@@ -68,7 +68,7 @@ function whyText(t: BankTxn, s: Array<{ extraId: string; p: number }>, names: (i
 
 function ReviewItem({ t, model }: { t: BankTxn; model: Model }) {
   const data = useActive();
-  const [mode, setMode] = useState<'pick' | 'more' | 'split' | 'skip' | 'bill' | 'billAmount'>('pick');
+  const [mode, setMode] = useState<'pick' | 'more' | 'split' | 'skip' | 'bill' | 'billAmount' | 'billExtra'>('pick');
   const [pending, setPending] = useState<RecurringItem | null>(null);
   const opts = budgetOptions(data).filter((o) => !o.archived);
   const names = (id: string) => displayName(data, id);
@@ -83,13 +83,17 @@ function ReviewItem({ t, model }: { t: BankTxn; model: Model }) {
   const file = (extraId: string) => update((d) => { fileTxn(d, t.id, [{ extraId, amount }], now()); }, { undo: `${t.merchant} (${when}) filed in ${names(extraId)}` });
   const guessBill = (t.billGuess ? data.bills.find((b) => b.id === t.billGuess!.id) : undefined) ?? (refund ? undefined : linkedBill(data, t) ?? namedBill(data, t));
   const sameAsPlan = !!guessBill && Math.abs(Number(guessBill.amount) - amount) <= Math.max(0.5, amount * 0.02);
-  const linkBill = (b: RecurringItem, updateAmount: boolean) => {
+  const linkBill = (b: RecurringItem, how: { updateAmount?: boolean; extraTo?: string } = {}) => {
     const what = t.merchant.toLowerCase() === b.name.toLowerCase() ? `${b.name} (${when})` : `${t.merchant} (${when})`;
-    update((d) => { markAsBill(d, t.id, b.id, { updateAmount }); },
-      { undo: updateAmount ? `${what} marked as your ${b.name} bill, now ${fmtMoney(amount)}` : `${what} marked as your ${b.name} bill` });
+    const extra = round2(amount - (Number(b.amount) || 0));
+    update((d) => { markAsBill(d, t.id, b.id, how, now()); }, {
+      undo: how.updateAmount ? `${what} marked as your ${b.name} bill, now ${fmtMoney(amount)}`
+        : how.extraTo ? `${what}: bill ${fmtMoney(Number(b.amount) || 0)}, extra ${fmtMoney(extra)} in ${names(how.extraTo)}`
+          : `${what} marked as your ${b.name} bill`,
+    });
   };
   const chooseBill = (b: RecurringItem) => {
-    if (Math.abs(Number(b.amount) - amount) > Math.max(0.5, amount * 0.02)) { setPending(b); setMode('billAmount'); } else linkBill(b, false);
+    if (Math.abs(Number(b.amount) - amount) > Math.max(0.5, amount * 0.02)) { setPending(b); setMode('billAmount'); } else linkBill(b);
   };
   const newBill = () => openItemEditor({
     kind: 'bill', initial: { name: t.merchant, amount, rule: { type: 'monthly_dom', dom: Number(t.date.slice(8, 10)) } },
@@ -107,7 +111,7 @@ function ReviewItem({ t, model }: { t: BankTxn; model: Model }) {
           {sameAsPlan ? `Looks like your ${guessBill.name} bill.` : `Looks like your ${guessBill.name} bill, but your plan has it at ${fmtMoney(Number(guessBill.amount) || 0)}.`}
         </Note>
       )}
-      {!guessBill && mode !== 'bill' && mode !== 'billAmount' && <p className="sub">{whyText(t, guesses, names)}</p>}
+      {!guessBill && mode !== 'bill' && mode !== 'billAmount' && mode !== 'billExtra' && <p className="sub">{whyText(t, guesses, names)}</p>}
       {maybe && (
         <Note tone="info" action={<button type="button" className="btn sm ghost" onClick={() => update((d) => linkTxn(d, t.id, maybe.id), { undo: 'Matched to your log' })}>Yes, same purchase</button>}>
           Maybe the same as your {fmtShort(parseISOToMs(maybe.date))} log: {maybe.note || names(maybe.extraId)}, {fmtMoney(Math.abs(maybe.amount))} in {names(maybe.extraId)}.
@@ -129,13 +133,37 @@ function ReviewItem({ t, model }: { t: BankTxn; model: Model }) {
         </div>
       )}
       {mode === 'bill' && <BillPicker t={t} onPick={chooseBill} onNew={newBill} onBack={() => setMode('pick')} />}
-      {mode === 'billAmount' && pending && (
-        <div className="stack">
-          <p className="sub body">Your plan has {pending.name} at {fmtMoney(Number(pending.amount) || 0)}. This charge was {fmtMoney(amount)}.</p>
-          <div className="btn-row wrap">
-            <button type="button" className="btn sm" onClick={() => linkBill(pending, true)}>Make it {fmtMoney(amount)}</button>
-            <button type="button" className="btn sm ghost" onClick={() => linkBill(pending, false)}>Keep {fmtMoney(Number(pending.amount) || 0)}</button>
+      {mode === 'billAmount' && pending && (() => {
+        const planned = Number(pending.amount) || 0;
+        const extra = round2(amount - planned);
+        return (
+          <div className="stack">
+            <p className="sub body">Your plan has {pending.name} at {fmtMoney(planned)}. This charge was {fmtMoney(amount)}{extra > 0 ? `, ${fmtMoney(extra)} more` : ''}.</p>
+            <div className="choice-list">
+              <button type="button" className="choice" onClick={() => linkBill(pending, { updateAmount: true })}>
+                <span className="strong">{extra > 0 ? 'The price went up' : 'The price went down'}</span><span className="sub">Change the bill to {fmtMoney(amount)} from now on.</span>
+              </button>
+              {extra > 0 && (
+                <button type="button" className="choice" onClick={() => setMode('billExtra')}>
+                  <span className="strong">A one-time extra</span><span className="sub">{fmtMoney(planned)} is the bill; the extra {fmtMoney(extra)} comes out of a budget.</span>
+                </button>
+              )}
+              <button type="button" className="choice" onClick={() => linkBill(pending)}>
+                <span className="strong">Count it all as the bill</span><span className="sub">The bill stays {fmtMoney(planned)} in your plan; nothing comes out of a budget.</span>
+              </button>
+            </div>
             <button type="button" className="btn sm quiet" onClick={() => setMode('bill')}>Back</button>
+          </div>
+        );
+      })()}
+      {mode === 'billExtra' && pending && (
+        <div className="stack">
+          <p className="sub">Which budget should the extra {fmtMoney(round2(amount - (Number(pending.amount) || 0)))} come out of?</p>
+          <div className="chips">
+            {[...opts.filter((o) => o.id === MISC_ID), ...opts.filter((o) => o.id !== MISC_ID)].map((o) => (
+              <button key={o.id} type="button" className={`cp ${o.id === MISC_ID ? 'on-soft' : ''}`} onClick={() => linkBill(pending, { extraTo: o.id })}>{o.name}</button>
+            ))}
+            <button type="button" className="cp ghost-cp" onClick={() => setMode('billAmount')}>Back</button>
           </div>
         </div>
       )}

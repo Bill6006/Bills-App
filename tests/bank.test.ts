@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { makeDefaultData } from '../src/data/defaults';
-import { applyImport, billChoices, fileTxn, linkTxn, markAsBill, namedBill, planImport, reviewTxns, skipTxn, txnIds } from '../src/engine/bank/importer';
+import { applyImport, billChoices, fileTxn, linkTxn, markAsBill, namedBill, planImport, reviewAgain, reviewTxns, skipTxn, txnIds } from '../src/engine/bank/importer';
 import { buildModel, predict } from '../src/engine/bank/learn';
 import { describeMerchant } from '../src/engine/bank/merchant';
 import { parseAmountCell, parseDateCell, parseStatement } from '../src/engine/bank/statement';
-import type { AppData, SpendEntry } from '../src/engine/types';
+import { MISC_ID, type AppData, type SpendEntry } from '../src/engine/types';
 
 const TODAY = '2026-11-06';
 
@@ -377,6 +377,27 @@ describe('bills in an import', () => {
     expect(d.bank.txns.find((x) => x.id === b.txn.id)).toMatchObject({ status: 'skipped', how: 'bill:Streambox' });
     const next = doImport(d, csv(['11/24/2026,STREAMBOX* PLUS SUB STREAMBOX.COM CAUS,-19.50'])).plan.items[0];
     expect(next.txn.how).toBe('bill:Streambox');
+  });
+
+  it('splits a one-time extra: the planned amount is the bill, the rest is spending', () => {
+    const d = sampleData();
+    d.bills.push({ id: 'host', name: 'Hostly', amount: 2.75, rule: { type: 'monthly_dom', dom: 6 } });
+    const [a] = doImport(d, csv(['10/06/2026,HOSTLY SERVERS 800-555-0100 PAUS,-14.20'])).plan.items;
+    expect(markAsBill(d, a.txn.id, 'host', { extraTo: MISC_ID }, '2026-11-06T12:00:00Z')).toBe(true);
+    const t = d.bank.txns.find((x) => x.id === a.txn.id)!;
+    expect(t).toMatchObject({ status: 'logged', how: 'bill:Hostly', billId: 'host' });
+    const extra = d.spendEntries.filter((e) => e.bankTxnId === t.id);
+    expect(extra).toHaveLength(1);
+    expect(extra[0]).toMatchObject({ extraId: MISC_ID, amount: 11.45, date: '2026-10-06' });
+    expect(d.bills.find((b) => b.id === 'host')!.amount).toBe(2.75);
+    expect(d.bank.billLinks).toEqual([{ billId: 'host', text: 'hostly servers', amount: 2.75 }]);
+    // Next month: the usual amount is the bill on its own; another big charge asks again.
+    const next = doImport(d, csv(['11/06/2026,HOSTLY SERVERS 800-555-0100 PAUS,-2.75', '11/20/2026,HOSTLY SERVERS 800-555-0100 PAUS,-14.20'])).plan.items;
+    expect(next.find((i) => i.txn.amount === -2.75)!.txn.how).toBe('bill:Hostly');
+    expect(next.find((i) => i.txn.amount === -14.2)!).toMatchObject({ action: 'review', txn: { billGuess: { id: 'host' } } });
+    // Sending it back to review removes the extra from the budget.
+    reviewAgain(d, t.id);
+    expect(d.spendEntries.some((e) => e.bankTxnId === t.id)).toBe(false);
   });
 
   it('keeps two bills that share bank text apart by amount', () => {
