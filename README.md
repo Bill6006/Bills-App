@@ -61,7 +61,7 @@ Chrome can delete a site's storage when the phone runs low on space. With **Plan
 |---|---|
 | Worker name | `bills-sync` (must match `worker/wrangler.jsonc`) |
 | Root directory | `worker` |
-| Build command | *(none)* |
+| Build command | `npm run build` (type-checks the Worker) |
 | Deploy command | `npx wrangler deploy` |
 
 To set it up: Cloudflare dashboard › **Workers & Pages** › **Create** › **Import a repository**, connect GitHub (only this repository), pick it and enter the settings above. After the first deploy, put the Worker's address (`https://bills-sync.<your-subdomain>.workers.dev`) in `DEPLOYED_URL` in `src/sync/config.ts`. Until it's set, the app hides every sync control. The Worker accepts browser calls only from the origins in `ALLOWED_ORIGINS` (`worker/wrangler.jsonc`) and from localhost.
