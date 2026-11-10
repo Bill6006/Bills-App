@@ -1,8 +1,11 @@
 // End-to-end checks against a running Worker.
-// Usage: npm run dev (in another terminal), then: node test/smoke.mjs [baseUrl]   (default http://127.0.0.1:8787)
+// Usage: npm run dev (in another terminal), then: node test/smoke.mjs [baseUrl] [--skip-lockout]
+// (default http://127.0.0.1:8787). Use --skip-lockout against a deployed Worker: that check leaves a locked test vault behind.
 import { randomBytes } from 'node:crypto';
 
-const base = (process.argv[2] || 'http://127.0.0.1:8787').replace(/\/$/, '');
+const args = process.argv.slice(2);
+const base = (args.find((a) => !a.startsWith('--')) || 'http://127.0.0.1:8787').replace(/\/$/, '');
+const skipLockout = args.includes('--skip-lockout');
 const hex = (n) => randomBytes(n).toString('hex');
 let failures = 0;
 function check(name, ok, detail) {
@@ -74,13 +77,15 @@ check('delete', r.status === 200, r.status);
 r = await fetch(v.url('/head'), { headers: v.auth() });
 check('vault is gone after delete (404)', r.status === 404, r.status);
 
-const lock = vaultClient();
-await lock.put(0, new Uint8Array([1]));
-const codes = [];
-for (let i = 0; i < 21; i++) codes.push((await fetch(lock.url('/head'), { headers: lock.auth(hex(32)) })).status);
-check('20 wrong tokens are 401, the next is 429', codes.slice(0, 20).every((c) => c === 401) && codes[20] === 429, codes);
-r = await fetch(lock.url('/head'), { headers: lock.auth() });
-check('locked vault refuses even the right token for a while (429)', r.status === 429, r.status);
+if (!skipLockout) {
+  const lock = vaultClient();
+  await lock.put(0, new Uint8Array([1]));
+  const codes = [];
+  for (let i = 0; i < 21; i++) codes.push((await fetch(lock.url('/head'), { headers: lock.auth(hex(32)) })).status);
+  check('20 wrong tokens are 401, the next is 429', codes.slice(0, 20).every((c) => c === 401) && codes[20] === 429, codes);
+  r = await fetch(lock.url('/head'), { headers: lock.auth() });
+  check('locked vault refuses even the right token for a while (429)', r.status === 429, r.status);
+}
 
 console.log(failures ? `${failures} check(s) failed` : 'all checks passed');
 process.exit(failures ? 1 : 0);

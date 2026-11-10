@@ -3,7 +3,7 @@
  * For local development, run the Worker (`npm run dev` in `worker/`) and start the app with
  * VITE_SYNC_URL=http://127.0.0.1:8787 npm run dev
  */
-const DEPLOYED_URL = '';
+const DEPLOYED_URL = 'https://bills-sync.life-mirror.workers.dev';
 
 export const SYNC_URL: string = String(import.meta.env.VITE_SYNC_URL || DEPLOYED_URL).replace(/\/+$/, '');
 
