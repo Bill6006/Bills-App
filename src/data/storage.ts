@@ -1,6 +1,6 @@
 /**
  * On-device storage. IndexedDB (via idb-keyval) with a localStorage fallback for browsers that block it.
- * Nothing ever leaves the device.
+ * Nothing leaves the device from here; cloud sync (src/sync) uploads an encrypted copy only when it's turned on.
  */
 import { createStore, del, get, set, type UseStore } from 'idb-keyval';
 import type { AppData } from '../engine/types';
@@ -8,6 +8,7 @@ import { upgradeData } from './upgrade';
 
 const KEY_DATA = 'data.v1';
 const KEY_WHATIF = 'whatif.v1';
+const KEY_SYNC = 'sync.v1';
 const LS_PREFIX = 'bills-planner:';
 
 let idb: UseStore | null = null;
@@ -57,3 +58,8 @@ export async function loadAll(today: string): Promise<{ data: AppData | null; wh
 export const saveData = (d: AppData) => write(KEY_DATA, d);
 export const saveWhatIf = (d: AppData | null) => (d ? write(KEY_WHATIF, d) : remove(KEY_WHATIF));
 export const clearAll = async () => { await remove(KEY_DATA); await remove(KEY_WHATIF); };
+
+/** Cloud sync settings for this device (keys derived from the sync password, never the password itself). */
+export const loadSyncConfig = () => read<unknown>(KEY_SYNC);
+export const saveSyncConfig = (cfg: unknown) => write(KEY_SYNC, cfg);
+export const clearSyncConfig = () => remove(KEY_SYNC);

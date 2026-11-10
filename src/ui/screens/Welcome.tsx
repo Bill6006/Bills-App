@@ -4,10 +4,21 @@ import { navigate } from '../../app/router';
 import { replaceAll, useStore } from '../../state/store';
 import { Guilloche } from '../components/Guilloche';
 import { openImport } from '../sheets/ImportSheet';
-import { IconFile, IconLock, IconSparkle, IconDollar } from '../icons';
+import { IconFile, IconLock, IconSparkle, IconDollar, IconRefresh } from '../icons';
+import { syncAvailable } from '../../sync/config';
+import { restoreWithSavedPassword, useSync } from '../../sync/sync';
+import { toast } from '../../state/toast';
+import { openRestoreSheet } from './plan/SyncPage';
 
 export function Welcome() {
   const today = useStore((s) => s.today);
+  const restoring = useSync((s) => s.phase === 'working');
+  const restoreFromCloud = async () => {
+    const r = await restoreWithSavedPassword();
+    if (r?.ok) return;
+    if (r) toast(r.message);
+    openRestoreSheet();
+  };
   const loadSample = () => {
     const { data } = importV117(sample, today, { fileName: 'sample' });
     data.meta.sample = true;
@@ -24,7 +35,13 @@ export function Welcome() {
       </section>
 
       <div className="welcome-actions">
-        <button type="button" className="card tap welcome-option primary" onClick={openImport}>
+        {syncAvailable() && (
+          <button type="button" className="card tap welcome-option primary" disabled={restoring} onClick={() => void restoreFromCloud()}>
+            <span className="icon-badge s"><IconRefresh /></span>
+            <span className="main-col"><span className="title-wrap strong">{restoring ? 'Restoring…' : 'Restore from the cloud'}</span><span className="sub">Already use cloud sync? Get all your data back with your sync password.</span></span>
+          </button>
+        )}
+        <button type="button" className={`card tap welcome-option${syncAvailable() ? '' : ' primary'}`} onClick={openImport}>
           <span className="icon-badge p"><IconFile /></span>
           <span className="main-col"><span className="title-wrap strong">Import from Bills Account Planner</span><span className="sub">Bring over everything from your v117 export.</span></span>
         </button>
@@ -38,7 +55,7 @@ export function Welcome() {
         </button>
       </div>
 
-      <p className="sub center"><IconLock className="inline-icon" /> Your data stays on this device. No account, nothing uploaded.</p>
+      <p className="sub center"><IconLock className="inline-icon" /> Your data stays on this device. Nothing is uploaded unless you turn on cloud sync, which encrypts it first.</p>
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { Spending } from '../ui/screens/Spending';
 import { Plan } from '../ui/screens/plan/PlanHub';
 import { openQuickAdd } from '../ui/sheets/QuickAdd';
 import type { ThemePref } from '../engine/types';
+import { startSync } from '../sync/sync';
 
 function applyTheme(theme: ThemePref) {
   const root = document.documentElement;
@@ -56,6 +57,7 @@ export function App() {
   const route = useRoute();
   useTheme(data.prefs.theme);
   useEffect(() => { void hydrate(); }, []);
+  useEffect(() => { if (hydrated) void startSync(); }, [hydrated]);
   const banner = !hydrated ? null : whatIf ? 'whatif' : realData.meta.sample ? 'sample' : null;
   const bannerRef = useBannerHeight(banner);
 

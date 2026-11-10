@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Must match the Worker's name in the Cloudflare dashboard (Workers Builds checks this).
+  "name": "bills-sync",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-20",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  "durable_objects": {
+    "bindings": [{ "name": "VAULTS", "class_name": "Vault" }]
+  },
+  // SQLite-backed Durable Objects work on the free plan and need nothing created by hand.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Vault"] }],
+  "vars": {
+    // Pages that may call this Worker from a browser (comma-separated). localhost is always allowed for development.
+    "ALLOWED_ORIGINS": "https://bill6006.github.io"
+  }
+}

@@ -11,6 +11,7 @@ import { Amount, DateBadge, Meter, Money, Note, SplitBar } from '../components/b
 import { openWhy } from '../sheets/WhySheet';
 import { openEntry } from '../sheets/EntrySheet';
 import { IconCheck, IconChevronRight, IconSliders } from '../icons';
+import { syncAttention, syncProtects, useSync } from '../../sync/sync';
 
 function greeting() {
   const h = new Date().getHours();
@@ -30,6 +31,13 @@ export function Home() {
   const budget = cur.snapshot.totals.budget;
   const startPay = cur.startPayday;
   const showChecklist = startPay && parseISOToMs(todayIso) - startPay.ms <= 3 * 86400000;
+  const sync = useSync();
+  const syncNote = syncAttention(sync);
+  // With an up-to-date cloud copy, the backup-file reminder isn't needed.
+  const alerts = [
+    ...(syncNote ? [{ id: 'sync', tone: 'warn' as const, text: syncNote, action: { label: 'Cloud sync', to: '/plan/sync' } }] : []),
+    ...m.alerts.filter((a) => !(a.id === 'backup' && syncProtects(sync))),
+  ];
 
   return (
     <div className="page home">
@@ -81,9 +89,9 @@ export function Home() {
         </div>
 
         <div className="home-col">
-          {m.alerts.length > 0 && (
+          {alerts.length > 0 && (
             <div className="stack">
-              {m.alerts.map((a) => (
+              {alerts.map((a) => (
                 <Note key={a.id} tone={a.tone === 'bad' ? 'bad' : a.tone === 'info' ? 'info' : 'warn'}
                   action={a.action ? <button type="button" className="link-btn" onClick={() => navigate(a.action!.to)}>{a.action.label} <IconChevronRight /></button> : undefined}>
                   {a.text}

@@ -5,7 +5,7 @@ A paycheck-first planner for bills, spending money, savings and loans, rebuilt f
 Every paycheck splits three ways: a fixed amount moves to your **Bills account**, a fixed amount moves to **Savings**, and the rest is **yours to spend**. The app works out those amounts so the Bills account never drops below your cushion and always carries enough into next month. It's a guide: it shows what each account *should* have today, and you keep your bank in line with it. You don't enter your real balances.
 
 - **Installable PWA.** Add it to your home screen; it works offline and updates itself.
-- **Private.** Everything is stored on your device (IndexedDB). There is no server, account or tracking. This repository contains only app code, never anyone's data.
+- **Private.** Everything is stored on your device (IndexedDB). Optional **cloud sync** keeps an end-to-end encrypted copy on a small Cloudflare Worker, which only ever sees scrambled bytes. No accounts with anyone, no tracking. This repository contains only app code, never anyone's data.
 - **Same math as v117.** The calculation engine in `src/engine` is a tested port of v117's formulas, with a short list of deliberate bug fixes.
 
 ## What's where
@@ -41,6 +41,33 @@ Each loan's payment is planned as a bill on its due day. With automatic payments
 
 If a loan's last logged payment is months old (common right after importing), the loan asks whether those payments were made and can record them for you, or you can type the balance your lender shows.
 
+## Cloud sync
+
+Chrome can delete a site's storage when the phone runs low on space. With **Plan › Cloud sync** turned on, that no longer loses anything:
+
+- You pick a **sync name** and **sync password** once, and let Chrome's password manager save them.
+- A few seconds after every change the app uploads an encrypted copy. It also checks for a newer copy when it opens, when you come back to it, and every few minutes, so a phone and a computer stay in step.
+- If the app's storage is wiped (or on a new phone), the app opens empty and restores itself using the password Chrome saved. If Chrome can't hand it over silently, tap **Restore from the cloud** on the Welcome screen.
+- The cloud keeps every version from the last day and one a day for 30 days (**Earlier versions**).
+- If this device and the cloud copy both changed since they last matched, the app asks which one to keep. An empty or sample-data app never uploads over a real copy.
+
+**Privacy.** The password never leaves the device. PBKDF2 (600,000 rounds) turns the name and password into an AES-GCM key (data is gzipped, then encrypted on the device), an access token the server stores only as a hash, and a key for a checksum that lets two copies be compared without decrypting them. The Worker stores ciphertext only. Forgetting the password means the cloud copy can't be opened by anyone. The code is in `src/sync/` (app) and `worker/` (server).
+
+### Running the sync server
+
+`worker/` is a Cloudflare Worker named `bills-sync`. Each sync name is a SQLite-backed Durable Object, which works on the free plan and needs nothing created by hand. It deploys from this repository through **Cloudflare Workers Builds**:
+
+| Setting | Value |
+|---|---|
+| Worker name | `bills-sync` (must match `worker/wrangler.jsonc`) |
+| Root directory | `worker` |
+| Build command | *(none)* |
+| Deploy command | `npx wrangler deploy` |
+
+To set it up: Cloudflare dashboard › **Workers & Pages** › **Create** › **Import a repository**, connect GitHub (only this repository), pick it and enter the settings above. After the first deploy, put the Worker's address (`https://bills-sync.<your-subdomain>.workers.dev`) in `DEPLOYED_URL` in `src/sync/config.ts`. Until it's set, the app hides every sync control. The Worker accepts browser calls only from the origins in `ALLOWED_ORIGINS` (`worker/wrangler.jsonc`) and from localhost.
+
+Local development: `cd worker && npm install && npm run dev` starts it at `http://127.0.0.1:8787`, then start the app with `VITE_SYNC_URL=http://127.0.0.1:8787` (for example in `.env.development.local`). `npm run smoke` in `worker/` runs end-to-end checks against the running Worker.
+
 ## Changes from v117
 
 The engine keeps v117's numbers exactly when these fixes are off (`NO_FIXES`, used by the parity tests). The app runs with all of them on:
@@ -59,7 +86,7 @@ In v117 tap **Export JSON**, then in this app open **Plan › Backup & import** 
 ```bash
 npm install      # uses legacy peer resolution (.npmrc)
 npm run dev      # local dev server
-npm test         # engine, importer, loan and view-model tests
+npm test         # engine, importer, loan, view-model and sync tests
 npm run build    # type-check and production build into dist/
 ```
 
@@ -69,4 +96,4 @@ Icons are generated with `node scripts/make-icons.mjs` (needs Playwright's Chrom
 
 ## Deployment
 
-`.github/workflows/deploy.yml` builds, tests and publishes `dist/` to GitHub Pages on every push. One-time setup in the repository: **Settings › Pages › Build and deployment › Source: GitHub Actions**, then re-run the latest workflow (or push again). The site is served at `https://bill6006.github.io/Bills-App/`.
+`.github/workflows/deploy.yml` builds, tests and publishes `dist/` to GitHub Pages on every push. The sync server deploys separately through Cloudflare Workers Builds (see **Running the sync server**). One-time setup in the repository: **Settings › Pages › Build and deployment › Source: GitHub Actions**, then re-run the latest workflow (or push again). The site is served at `https://bill6006.github.io/Bills-App/`.
