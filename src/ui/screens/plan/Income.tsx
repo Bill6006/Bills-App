@@ -75,6 +75,19 @@ function PayEditor({ pay, onChange, today, label }: { pay: PaySchedule; onChange
         </div>
       )}
       <p className="sub">{next.length ? <>Next: {next.map((ms) => fmtDow(ms)).join(' · ')}</> : 'No upcoming paydays.'}</p>
+      {(pay.moved || []).length > 0 && (
+        <div className="stack">
+          <span className="lbl">Paid on a different day, just that once</span>
+          <div className="chips">
+            {(pay.moved || []).map((m) => (
+              <span key={m.from} className="cp on with-x">{fmtShort(parseISOToMs(m.from))} → {fmtShort(parseISOToMs(m.to))}
+                <button type="button" aria-label={`Put the ${m.from} payday back on its usual day`} onClick={() => set({ moved: (pay.moved || []).filter((x) => x.from !== m.from) })}><IconClose /></button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      <p className="sub">Got paid early or late once? Tap that payday on the Timeline (or Home's payday card) and pick the day the money came.</p>
     </div>
   );
 }

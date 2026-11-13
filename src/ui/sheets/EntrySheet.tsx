@@ -1,13 +1,15 @@
 import { fmtDow, fmtMonthLong, fmtRange, fmtShort, isoDate } from '../../engine/dates';
 import { fmtMoney, round2 } from '../../engine/money';
 import type { PlanEngine } from '../../engine/plan';
-import { describeRule } from '../../engine/schedule';
+import { describeRule, paydayMoveTo } from '../../engine/schedule';
 import { navigate } from '../../app/router';
 import { closeAllSheets, openSheet } from '../../state/sheets';
 import { paydayInfo, type Entry } from '../../state/models';
 import { Sheet } from '../components/Sheet';
 import { Amount, Money, Note } from '../components/bits';
 import { openWhy } from './WhySheet';
+import { MovePaydayForm } from './MovePaydaySheet';
+import { IconChevronDown } from '../icons';
 
 export function openEntry(engine: PlanEngine, e: Entry) {
   openSheet((close) => <EntrySheet engine={engine} e={e} onClose={close} />);
@@ -43,6 +45,10 @@ function EntrySheet({ engine, e, onClose }: { engine: PlanEngine; e: Entry; onCl
             <p className="sub">Bills account after the move: {fmtMoney(e.billsAfter)} · Savings after: {fmtMoney(e.savingsAfter)}</p>
           </>
         )}
+        <details className="disclosure" open={!!paydayMoveTo(isoDate(e.ms), engine.settings)}>
+          <summary><span className="lbl">Paid on a different day?</span><IconChevronDown /></summary>
+          <MovePaydayForm ms={e.ms} onDone={onClose} />
+        </details>
       </Sheet>
     );
   }

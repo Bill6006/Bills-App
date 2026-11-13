@@ -18,6 +18,8 @@ import { Trends } from './SpendingTrends';
 import { IconChevronLeft, IconChevronRight, IconEnvelope, IconFile, IconMove, IconPlus, IconSearch } from '../icons';
 import { openBankImport } from '../sheets/BankImportSheet';
 import { openReview } from '../sheets/ReviewSheet';
+import { movePaydayTo } from '../sheets/MovePaydaySheet';
+import { getPaydaysForMonth } from '../../engine/schedule';
 import { useOpenOnRoute } from './plan/common';
 
 type View = 'budgets' | 'history' | 'trends';
@@ -131,6 +133,9 @@ function Budgets({ engine, data, scopeKind, range: r, isCurrent: cur, today: t, 
             <span className="sub">{status}</span>
           </span>
         </button>
+        {cur && scopeKind === 'period' && daysLeft <= 2 && getPaydaysForMonth(isoDate(r.endMs + 86400000).slice(0, 7), engine.settings).includes(r.endMs + 86400000) && (
+          <p className="sub center paid-early-line">Paid early? <button type="button" className="link-btn" onClick={() => movePaydayTo(r.endMs + 86400000, t)}>Start the new pay period today</button></p>
+        )}
         {scopeKind === 'month' && <p className="sub">Month totals add up the pay periods that end in this month.</p>}
 
         <div className="btn-row">

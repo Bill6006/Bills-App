@@ -10,7 +10,7 @@ import { debtSummary, lastPaymentDate, loanOutlook, missedDueDates, payoffMonth,
 import type { MonthPlan, PlanEngine, PlanRow } from '../engine/plan';
 import { capForPayIndex, pocketBase, pocketMinimumInfo, savingsForPayIndex, type MinimumInfo } from '../engine/pocket';
 import { nextPeriod, periodForDate, snapshotForRange, type Period, type Snapshot } from '../engine/spending';
-import { getPaydaysForPay } from '../engine/schedule';
+import { getPaydaysForPay, paydayMoveTo } from '../engine/schedule';
 
 export interface PaydayInfo {
   ms: number;
@@ -136,7 +136,8 @@ export function entriesForDay(engine: PlanEngine, ms: number): Entry[] {
   if (r.isPayday) {
     bills = round2(bills + r.transferIn);
     savings = round2(savings + r.savingsIn);
-    out.push({ key: `pay-${ms}`, ms, kind: 'payday', title: 'Payday', amount: r.transferIn, savingsMove: r.savingsIn, billsAfter: bills, savingsAfter: savings });
+    const moved = paydayMoveTo(isoDate(ms), engine.settings);
+    out.push({ key: `pay-${ms}`, ms, kind: 'payday', title: 'Payday', detail: moved ? `${moved.to < moved.from ? 'Paid early' : 'Paid late'} this time · usually ${fmtDow(parseISOToMs(moved.from))}` : undefined, amount: r.transferIn, savingsMove: r.savingsIn, billsAfter: bills, savingsAfter: savings });
   }
   r.bills.forEach((b, i) => {
     bills = round2(bills - Number(b.amount || 0));

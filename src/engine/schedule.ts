@@ -8,7 +8,7 @@ import {
   parseMonthKey, toDateObj, type MonthKey,
 } from './dates';
 import { clampInt, round2 } from './money';
-import type { PaySchedule, RecurringItem, Rule, Settings } from './types';
+import type { PaydayMove, PaySchedule, RecurringItem, Rule, Settings } from './types';
 
 export interface Occ { id: string; name: string; amount: number; debtId?: string }
 export type OccMap = Map<number, Occ[]>;
@@ -17,7 +17,52 @@ function uniqSorted(list: number[]): number[] {
   return list.slice().sort((a, b) => a - b).filter((v, i, a) => i === 0 || v !== a[i - 1]);
 }
 
+const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
+const validMoves = (pay: Partial<PaySchedule> | null | undefined) =>
+  (Array.isArray(pay?.moved) ? pay!.moved : []).filter((m) => m && ISO_RE.test(String(m.from)) && ISO_RE.test(String(m.to)));
+
+/**
+ * Paydays in a month, with one-time moves applied: a payday that came early or late counts on the day it came
+ * (so its pay period, budgets and transfers start that day), even when that day is in the next or previous month.
+ */
 export function getPaydaysForPay(monthKey: MonthKey, pay: Partial<PaySchedule> | null | undefined): number[] {
+  const base = scheduledPaydaysForPay(monthKey, pay);
+  const moves = validMoves(pay).filter((m) => m.from !== m.to && scheduledPaydaysForPay(m.from.slice(0, 7), pay).includes(parseISOToMs(m.from)));
+  if (!moves.length) return base;
+  const out = base.filter((ms) => !moves.some((m) => m.from === isoDate(ms)));
+  for (const m of moves) if (m.to.slice(0, 7) === monthKey) out.push(parseISOToMs(m.to));
+  return uniqSorted(out);
+}
+
+/** The move, if any, that put a payday on this date (so screens can say "usually Nov 13"). */
+export function paydayMoveTo(iso: string, settings: Pick<Settings, 'pay' | 'pay2'>): PaydayMove | null {
+  for (const pay of [settings.pay, settings.pay2]) {
+    const m = validMoves(pay).find((x) => x.to === iso && x.from !== x.to);
+    if (m && scheduledPaydaysForPay(m.from.slice(0, 7), pay).includes(parseISOToMs(m.from))) return m;
+  }
+  return null;
+}
+
+/** The usual date of the payday shown on this date (itself when it wasn't moved). */
+export const usualPayday = (iso: string, settings: Pick<Settings, 'pay' | 'pay2'>): string => paydayMoveTo(iso, settings)?.from ?? iso;
+
+/**
+ * Move one payday to the day the money came (or back to its usual day when they're the same). Applies to every pay
+ * schedule that has a payday on the usual date. Returns false when neither does.
+ */
+export function movePayday(settings: Pick<Settings, 'pay' | 'pay2'>, fromIso: string, toIso: string): boolean {
+  let hit = false;
+  for (const pay of [settings.pay, settings.pay2]) {
+    if (!pay || !scheduledPaydaysForPay(fromIso.slice(0, 7), pay).includes(parseISOToMs(fromIso))) continue;
+    const rest = validMoves(pay).filter((m) => m.from !== fromIso);
+    pay.moved = toIso === fromIso ? rest : [...rest, { from: fromIso, to: toIso }].sort((a, b) => a.from.localeCompare(b.from));
+    hit = true;
+  }
+  return hit;
+}
+
+/** The usual schedule, without one-time moves. */
+export function scheduledPaydaysForPay(monthKey: MonthKey, pay: Partial<PaySchedule> | null | undefined): number[] {
   const start = monthStartMs(monthKey);
   const end = monthEndMs(monthKey);
   const p = pay && typeof pay === 'object' ? pay : {};

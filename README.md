@@ -31,6 +31,10 @@ Instead of logging each purchase, import your bank's monthly **PDF statement** (
 - The first CSV from a bank shows how its columns were read so you can correct them once; after that the layout is remembered.
 - **PDF statements** are read from their transaction tables: the column headings say which text is the date, description, type and amount, a table that continues on the next page is followed, and the store's bank text printed under its name is kept. Money in or out comes from the transaction type (Purchase, Refund, Fee, Transfer), money in / money out columns, the section (Deposits, Withdrawals) or the kind of account (a card or a bank account). Every table with a total line is checked against it, and the preview says whether everything added up. Scanned (picture-only) PDFs can't be read. The PDF reader ([pdf.js](https://mozilla.github.io/pdf.js/)) loads only when a PDF is picked and is cached for offline use.
 
+## Paid early or late
+
+When a paycheck comes on a different day just once, tap **Paid early? Start the new pay period today** on Spending (shown the last couple of days of a pay period), **Paid on a different day?** on Home's payday card, or the payday on the Timeline, and pick the day the money came. That paycheck then counts on that day everywhere: its pay period (so a purchase that day lands in the new period), per-paycheck budgets, and the Bills and Savings moves. The usual schedule doesn't change, and it can be moved back any time (Plan › Income lists these one-time changes).
+
 ## Loans update themselves
 
 Each loan's payment is planned as a bill on its due day. With automatic payments on (the default), the balance drops on each due date as if the scheduled payment went through, so there's nothing to log month to month. Log a payment only when it's extra or different:

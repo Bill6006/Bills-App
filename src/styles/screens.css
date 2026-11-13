@@ -164,3 +164,7 @@ button.legend-row:hover span:nth-child(2) { text-decoration: underline; text-dec
 .bar-chart .bar:hover rect:nth-child(2) { filter: brightness(1.08); }
 .chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; }
 .chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* "Paid early?" links on payday cards and the Spending summary */
+.paid-early { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 2px; }
+.paid-early-line { margin-top: -4px; }

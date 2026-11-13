@@ -4,12 +4,13 @@ import { fmtMoney, fmtSigned, round2 } from '../../engine/money';
 import { monthsLabel } from '../../engine/loans';
 import { navigate } from '../../app/router';
 import { useEngine, useRealEngine } from '../../state/useEngine';
-import { update, useActive } from '../../state/store';
+import { update, useActive, useStore } from '../../state/store';
 import { homeModel, type Entry, type PaydayInfo } from '../../state/models';
 import { Guilloche } from '../components/Guilloche';
 import { Amount, DateBadge, Meter, Money, Note, SplitBar } from '../components/bits';
 import { openWhy } from '../sheets/WhySheet';
 import { openEntry } from '../sheets/EntrySheet';
+import { movePaydayTo, openMovePayday } from '../sheets/MovePaydaySheet';
 import { IconCheck, IconChevronRight, IconSliders } from '../icons';
 import { syncAttention, syncProtects, useSync } from '../../sync/sync';
 
@@ -170,7 +171,21 @@ function NextPayday({ info, days, onWhy }: { info: PaydayInfo; days: number; onW
       {info.minimum && (
         <Note tone="warn">{info.minimum.mode === 'base' ? `Spending money is ${fmtMoney(info.minimum.shortBy)} under your ${fmtMoney(info.minimum.minimum)} minimum.` : `That's ${fmtMoney(info.minimum.shortBy)} under your ${fmtMoney(info.minimum.minimum)} minimum.`}</Note>
       )}
+      <PaidEarly ms={info.ms} days={days} />
     </section>
+  );
+}
+
+/** "Paid early?" for a payday a few days away: one tap counts it today; or pick another day. */
+function PaidEarly({ ms, days }: { ms: number; days: number }) {
+  const today = useStore((s) => s.today);
+  return (
+    <div className="paid-early sub">
+      {days >= 1 && days <= 3
+        ? <><span>Paid early?</span><button type="button" className="link-btn" onClick={() => movePaydayTo(ms, today)}>Count it today</button><span aria-hidden="true">·</span></>
+        : null}
+      <button type="button" className="link-btn" onClick={() => openMovePayday(ms)}>Paid on a different day?</button>
+    </div>
   );
 }
 
@@ -197,6 +212,7 @@ function PaydayChecklist({ info, checks, isToday }: { info: PaydayInfo; checks: 
           <Amount value={k === 'bills' ? info.billsMove : info.savingsMove} />
         </button>
       ))}
+      <div className="paid-early sub"><button type="button" className="link-btn" onClick={() => openMovePayday(info.ms)}>Came on a different day?</button></div>
     </section>
   );
 }

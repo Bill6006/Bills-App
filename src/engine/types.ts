@@ -36,7 +36,12 @@ export interface PaySchedule {
   semimonthlyDom2: number;
   monthlyDom: number;
   customDates: IsoDate[];
+  /** Paydays that came on a different day just once (paid early or late); the usual schedule stays. */
+  moved?: PaydayMove[];
 }
+
+/** One payday moved: the usual date and the day the money actually came. */
+export interface PaydayMove { from: IsoDate; to: IsoDate }
 
 export interface TransferSplit {
   pay2BillsPct: number;
